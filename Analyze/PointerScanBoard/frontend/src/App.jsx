@@ -1,5 +1,23 @@
 import { useState, useCallback } from 'react'
 
+const TAG_COLORS = [
+  '#059669', // emerald
+  '#d97706', // amber
+  '#2563eb', // blue
+  '#db2777', // pink
+  '#7c3aed', // purple
+  '#dc2626', // red
+  '#0d9488', // teal
+];
+
+function getFileColor(filename) {
+  let hash = 0;
+  for (let i = 0; i < filename.length; i++) {
+    hash = filename.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
+}
+
 function TreeNode({ node }) {
   const [expanded, setExpanded] = useState(true);
   const targets = node.targets || [];
@@ -16,9 +34,14 @@ function TreeNode({ node }) {
         <span className="node-value">{node.value}</span>
         {targets.length > 0 && (
           <div className="node-targets">
-            {targets.map((t, idx) => (
-              <span key={idx} className="target-badge">T: {t}</span>
-            ))}
+            {targets.map((t, idx) => {
+              const badgeColor = getFileColor(t.file);
+              return (
+                <span key={idx} className="target-badge" style={{ background: badgeColor, color: '#fff' }}>
+                  [{t.file}] T: {t.offset}
+                </span>
+              );
+            })}
           </div>
         )}
       </div>
@@ -44,7 +67,8 @@ function App() {
   const [error, setError] = useState(null);
   
   // Basic
-  const [intersectionOnly, setIntersectionOnly] = useState(false);
+  const [intersectionMode, setIntersectionMode] = useState("strict");
+  const [minSharedDepth, setMinSharedDepth] = useState(2);
   
   // Advanced Settings
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -88,8 +112,9 @@ function App() {
     setUniqueValid(null);
   };
 
-  const appendParams = (formData) => {
-    formData.append('intersection_only', intersectionOnly.toString());
+  const appendParams = (formData, modeToUse) => {
+    formData.append('intersection_mode', modeToUse || intersectionMode);
+    formData.append('min_shared_depth', minSharedDepth);
     formData.append('target_module', targetModule);
     formData.append('align_8_bytes', align8.toString());
     formData.append('max_offset_val', maxOffset);
@@ -137,12 +162,9 @@ function App() {
     files.forEach(file => {
       formData.append('files', file);
     });
-    // The export API applies intersection and filter heuristics before deletion.
-    formData.append('intersection_only', "true"); // Always true for export as user wants the filtered common
-    formData.append('target_module', targetModule);
-    formData.append('align_8_bytes', align8.toString());
-    formData.append('max_offset_val', maxOffset);
-    formData.append('max_depth', maxDepth);
+    
+    // Use the current mode selected by the user for export as well
+    appendParams(formData, intersectionMode);
 
     try {
       const response = await fetch('http://localhost:8000/api/export', {
@@ -200,32 +222,57 @@ function App() {
         {files.length > 0 && (
           <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
             <div className="file-list">
-              {files.map((f, i) => (
-                <div key={i} className="file-tag">
-                  {f.name}
-                  <button onClick={(e) => { e.stopPropagation(); removeFile(i); }}>×</button>
-                </div>
-              ))}
+              {files.map((f, i) => {
+                const baseName = f.name.replace(/\.[^/.]+$/, "");
+                const tagColor = getFileColor(baseName);
+                return (
+                  <div key={i} className="file-tag" style={{ background: tagColor, borderColor: tagColor, color: '#fff' }}>
+                    {f.name}
+                    <button onClick={(e) => { e.stopPropagation(); removeFile(i); }} style={{ color: '#fff' }}>×</button>
+                  </div>
+                );
+              })}
             </div>
 
-            <div style={{ margin: '1.5rem 0 1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.75rem' }}>
-              <input 
-                type="checkbox" 
-                id="intersectCheck" 
-                checked={intersectionOnly}
-                onChange={(e) => setIntersectionOnly(e.target.checked)}
-                style={{ width: '1.2rem', height: '1.2rem', cursor: 'pointer' }}
-              />
-              <label htmlFor="intersectCheck" style={{ cursor: 'pointer', userSelect: 'none', color: 'var(--text-primary)', fontWeight: 500 }}>
-                Strict Intersection (모든 파일에 공통인 체인만)
-              </label>
-              <button 
-                className="btn-secondary" 
-                style={{ marginLeft: '1rem' }}
-                onClick={() => setShowAdvanced(!showAdvanced)}
-              >
-                {showAdvanced ? 'Hide Advanced Filters ⚙️' : 'Show Advanced Filters ⚙️'}
-              </button>
+            <div style={{ margin: '1.5rem 0 1rem', display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Filter Method:</span>
+                <select 
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--panel-border)', 
+                    color: 'var(--text-primary)', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer'
+                  }}
+                  value={intersectionMode}
+                  onChange={(e) => setIntersectionMode(e.target.value)}
+                >
+                  <option value="strict">Strict Intersection (100% Match)</option>
+                  <option value="partial">Partial Intersection (Share Common Root)</option>
+                  <option value="union">Union (Show All Mixed)</option>
+                </select>
+                
+                {intersectionMode === "partial" && (
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Min Shared Depth:</span>
+                    <input 
+                      type="number"
+                      value={minSharedDepth}
+                      onChange={(e) => setMinSharedDepth(e.target.value)}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--panel-border)', 
+                        color: 'var(--text-primary)', padding: '0.3rem', borderRadius: '4px', width: '50px', textAlign: 'center'
+                      }}
+                      min="0" max="15"
+                    />
+                  </div>
+                )}
+                
+                <button 
+                  className="btn-secondary" 
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                >
+                  {showAdvanced ? 'Hide Advanced Filters ⚙️' : 'Show Advanced Filters ⚙️'}
+                </button>
+              </div>
             </div>
 
             {showAdvanced && (

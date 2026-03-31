@@ -22,23 +22,23 @@ app.add_middleware(
 def read_root():
     return {"status": "Analyzer Backend is running."}
 
-def insert_into_tree(tree, base, chain, target):
+def insert_into_tree(tree, base, chain, target_offset, file_name):
     if base not in tree:
-        tree[base] = {"value": base, "children": {}, "targets": []}
+        tree[base] = {"value": base, "children": {}, "targets": set()}
     
     current = tree[base]
     for offset in chain:
         off_hex = hex(offset)
         if off_hex not in current["children"]:
-            current["children"][off_hex] = {"value": off_hex, "children": {}, "targets": []}
+            current["children"][off_hex] = {"value": off_hex, "children": {}, "targets": set()}
         current = current["children"][off_hex]
     
-    current["targets"].append(hex(target))
+    current["targets"].add((hex(target_offset), file_name))
 
 def format_tree(node):
     return {
         "value": node["value"],
-        "targets": list(set(node["targets"])),
+        "targets": [{"offset": t[0], "file": t[1]} for t in list(node["targets"])],
         "children": [format_tree(c) for c in node["children"].values()]
     }
 
@@ -51,12 +51,12 @@ def parse_hex_or_int(val_str):
     except:
         return None
 
-def process_files(files, intersection_only=False, target_module="", align_8_bytes=False, max_offset_val="", max_depth="7"):
+def process_files(files, intersection_mode="strict", min_depth=2, target_module="", align_8_bytes=False, max_offset_val="", max_depth_val="7"):
     file_signatures = [] 
     file_data = [] 
     
     max_off = parse_hex_or_int(max_offset_val)
-    max_d = parse_hex_or_int(max_depth)
+    max_d = parse_hex_or_int(max_depth_val)
 
     for file in files:
         temp_file = NamedTemporaryFile(delete=False, suffix=".sqlite")
@@ -92,28 +92,26 @@ def process_files(files, intersection_only=False, target_module="", align_8_byte
             module_id = row["moduleid"]
             module_offset = row["moduleoffset"]
             
-            # Apply Depth Filter
             if max_d is not None and offset_count > max_d:
                 continue
 
-            # Apply Base Module Filter
             module_name = modules.get(module_id, "UnknownModule")
             if target_module and target_module.lower() not in module_name.lower():
                 continue
             
             chain = []
             valid_chain = True
-            for i in range(1, offset_count + 1):
+            # CE SQLite stores offset1 as the last offset applied (leaf), and offset<N> as the first offset applied (base).
+            # We want the chain from base to leaf, so we iterate from offset_count down to 1.
+            for i in range(offset_count, 0, -1):
                 col_name = f"offset{i}"
                 if col_name in row.keys() and row[col_name] is not None:
                     off_val = row[col_name]
                     
-                    # Apply Alignment Filter
                     if align_8_bytes and (off_val % 8 != 0):
                         valid_chain = False
                         break
                         
-                    # Apply Max Offset Filter
                     if max_off is not None and off_val > max_off:
                         valid_chain = False
                         break
@@ -145,38 +143,72 @@ def process_files(files, intersection_only=False, target_module="", align_8_byte
             "results": file_results
         })
 
-    if intersection_only and len(file_signatures) > 0:
-        valid_signatures = set.intersection(*file_signatures)
-    else:
-        valid_signatures = set.union(*file_signatures) if file_signatures else set()
-
-    combined_tree = {}
     valid_ids_per_file = []
+    combined_tree = {}
+    unique_valid_set = set()
+    total_files = len(files)
+
+    valid_signatures = set()
+    prefix_map = {}
+
+    if intersection_mode == "strict":
+        valid_signatures = set.intersection(*file_signatures) if file_signatures else set()
+    elif intersection_mode == "union":
+        valid_signatures = set.union(*file_signatures) if file_signatures else set()
+    elif intersection_mode == "partial":
+        for idx, sigs in enumerate(file_signatures):
+            for sig in sigs:
+                base, chain = sig
+                for d in range(min_depth, len(chain) + 1):
+                    prefix = (base, tuple(chain[:d]))
+                    if prefix not in prefix_map:
+                        prefix_map[prefix] = set()
+                    prefix_map[prefix].add(idx)
     
-    for fd in file_data:
+    for idx, fd in enumerate(file_data):
         valid_ids = set()
+        filename = os.path.splitext(os.path.basename(fd["filename"]))[0]
+        
         for r in fd["results"]:
-            if not intersection_only or r["sig"] in valid_signatures:
+            sig = r["sig"]
+            base, chain = sig
+            is_valid = False
+            
+            if intersection_mode in ["strict", "union"]:
+                if sig in valid_signatures:
+                    is_valid = True
+            elif intersection_mode == "partial":
+                for d in range(min_depth, len(chain) + 1):
+                    prefix = (base, tuple(chain[:d]))
+                    if len(prefix_map.get(prefix, set())) == total_files:
+                        is_valid = True
+                        break
+            
+            if is_valid:
                 valid_ids.add(r["resultid"])
-                insert_into_tree(combined_tree, r["base_str"], r["chain"], r["target_offset"])
+                unique_valid_set.add(sig)
+                insert_into_tree(combined_tree, r["base_str"], r["chain"], r["target_offset"], filename)
+                
         valid_ids_per_file.append(valid_ids)
         
-    return combined_tree, valid_ids_per_file, file_data, len(valid_signatures)
+    return combined_tree, valid_ids_per_file, file_data, len(unique_valid_set)
 
 @app.post("/api/analyze")
 async def analyze_sqlite(
-    intersection_only: str = Form("false"), 
+    intersection_mode: str = Form("strict"), 
+    min_shared_depth: int = Form(2),
     target_module: str = Form(""),
     align_8_bytes: str = Form("false"),
     max_offset_val: str = Form(""),
     max_depth: str = Form("7"),
     files: list[UploadFile] = File(...)):
     
-    is_intersect = intersection_only.lower() == "true"
     is_align = align_8_bytes.lower() == "true"
     
     try:
-        combined_tree, valid_ids_per_file, file_data, unique_valid = process_files(files, is_intersect, target_module, is_align, max_offset_val, max_depth)
+        combined_tree, valid_ids_per_file, file_data, unique_valid = process_files(
+            files, intersection_mode, min_shared_depth, target_module, is_align, max_offset_val, max_depth
+        )
         
         for fd in file_data:
             if os.path.exists(fd["path"]):
@@ -186,6 +218,7 @@ async def analyze_sqlite(
         formatted_roots = [format_tree(node) for node in combined_tree.values()]
         return {"status": "success", "trees": formatted_roots, "total_valid": total_valid, "unique_valid": unique_valid}
     except Exception as e:
+        import traceback; traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 def cleanup_temp_dir(temp_dir, file_data):
@@ -202,18 +235,20 @@ def cleanup_temp_dir(temp_dir, file_data):
 
 @app.post("/api/export")
 async def export_sqlite(
-    intersection_only: str = Form("false"), 
+    intersection_mode: str = Form("strict"), 
+    min_shared_depth: int = Form(2),
     target_module: str = Form(""),
     align_8_bytes: str = Form("false"),
     max_offset_val: str = Form(""),
     max_depth: str = Form("7"),
     files: list[UploadFile] = File(...)):
     
-    is_intersect = intersection_only.lower() == "true"
     is_align = align_8_bytes.lower() == "true"
 
     try:
-        _, valid_ids_per_file, file_data, _ = process_files(files, is_intersect, target_module, is_align, max_offset_val, max_depth)
+        _, valid_ids_per_file, file_data, _ = process_files(
+            files, intersection_mode, min_shared_depth, target_module, is_align, max_offset_val, max_depth
+        )
         
         temp_dir = mkdtemp()
         zip_path = os.path.join(temp_dir, "filtered_pointers.zip")
