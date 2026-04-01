@@ -1,0 +1,9 @@
+GWorld (base + 0x090D3030) → UWorld + 0x0158 → GameState (AGameStateBase) + 0x02A8 → PlayerArray[0] (APlayerState) + 0x0308 → PawnPrivate (APalCharacter) + 0x0628 → CharacterParameterComponent + 0x0130 → IndividualParameter + 0x0388 → SaveParameter (인라인) + 0x0174 → ★ UnusedStatusPoint
+
+4FC     ← 맨 위 (0x388 + 0x174, SaveParameter 인라인 오프셋)
+130     ← IndividualParameter
+628     ← CharacterParameterComponent
+308     ← PawnPrivate
+0       ← PlayerArray[0] (배열의 첫 번째 원소)
+2A8     ← PlayerArray
+158     ← GameState
