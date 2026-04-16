@@ -182,7 +182,14 @@ export default function PalworldRestDashboard() {
     });
 
     const text = await response.text();
-    const data = text ? safeJsonParse(text) : null;
+    let data = null;
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        data = text;
+      }
+    }
 
     if (!response.ok) {
       const detail = typeof data === "string" ? data : JSON.stringify(data ?? text);
@@ -278,7 +285,7 @@ export default function PalworldRestDashboard() {
     try {
       await request<unknown>("/shutdown", {
         method: "POST",
-        body: JSON.stringify({ waittime, message: message.trim() || undefined }),
+        body: JSON.stringify({ waittime, message: message.trim() || "Server_Shutdown" }),
       });
       addLog("success", `서버 정상 종료 요청을 전송했습니다. (${waittime}초 후)`);
     } catch (e) {
@@ -291,7 +298,7 @@ export default function PalworldRestDashboard() {
   async function forceShutdownServer() {
     if (!confirm(`경고: 지금 당장 강제 종료(Force Shutdown)하시겠습니까?\n진행중인 데이터가 손실될 수 있습니다!`)) return;
     try {
-      await request<unknown>("/forceshutdown", {
+      await request<unknown>("/stop", {
         method: "POST",
       });
       addLog("success", `서버 강제 종료 요청을 전송했습니다.`);
@@ -307,7 +314,7 @@ export default function PalworldRestDashboard() {
     try {
       await request<unknown>("/kick", {
         method: "POST",
-        body: JSON.stringify({ userid: userId, message: "관리자에 의해 추방되었습니다." }),
+        body: JSON.stringify({ userid: userId, message: "Kicked_by_Admin" }),
       });
       addLog("success", `${playerName} (${userId}) 추방 요청을 전송했습니다.`);
       refreshAll();
@@ -323,7 +330,7 @@ export default function PalworldRestDashboard() {
     try {
       await request<unknown>("/ban", {
         method: "POST",
-        body: JSON.stringify({ userid: userId, message: "관리자에 의해 밴 되었습니다." }),
+        body: JSON.stringify({ userid: userId, message: "Banned_by_Admin" }),
       });
       addLog("success", `${playerName} (${userId}) 밴 요청을 전송했습니다.`);
       setBannedPlayers((prev) => {
