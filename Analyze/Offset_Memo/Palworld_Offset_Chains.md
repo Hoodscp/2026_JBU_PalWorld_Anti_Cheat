@@ -13,7 +13,8 @@
 | **스탯 포인트** | `Pawn + 0x628 -> + 0x130 ->` | **0x4FC** | uint16 | 미사용 포인트 |
 | **기술 포인트** | `PlayerState + 0x5E8 ->` | **0x150** | int32 | 테크놀로지 포인트 |
 | **인벤토리 수량** | `PlayerState + 0x5D8 -> ... -> Slot ->` | **0x154** | int32 | 개별 슬롯 내부 |
-| **플레이어 좌표** | `Pawn + 0x198 ->` | **0x128** | FVector | X, Y, Z (Float) |
+| **플레이어 좌표** | `Pawn + 0x198 ->` | **0x128** | FVector (Double) | X(128), Y(130), Z(138) |
+| **플레이어 온도** | `Pawn + 0xF38 -> + 0x130 ->` | **0x08** | int32 | 현재 체온 |
 
 ---
 
@@ -106,8 +107,19 @@
 
 ### 3.8 플레이어 좌표 (Player Coordinates - X)
 ```text
-128     ← RelativeLocation (X) - 12C는 Y, 130은 Z
+128     ← RelativeLocation (X) - 130은 Y, 138은 Z (Double)
 198     ← RootComponent
+308     ← PawnPrivate
+0       ← PlayerArray[0]
+2A8     ← PlayerArray
+158     ← GameState
+```
+
+### 3.9 플레이어 온도 (Player Body Temperature)
+```text
+08      ← CurrentTemperature
+130     ← TemperatureInfo (struct FPalTemperatureInfo)
+F38     ← PalBodyTemperatureComponent (BP_Player_Female_C)
 308     ← PawnPrivate
 0       ← PlayerArray[0]
 2A8     ← PlayerArray
@@ -119,4 +131,5 @@
 ## 4. 데이터 분석 요약
 1.  **인라인 구조체 합산:** `SaveParameter`는 `IndividualParameter` 내부 `0x388`에 위치하며, 내부 필드와 오프셋을 합산하여 접근해야 합니다.
 2.  **데이터 스케일:** HP, SP, Shield는 `int64`이며 실제 값에 **1000**이 곱해진 상태입니다.
-3.  **좌표:** `RelativeLocation`은 `FVector` 타입으로 3개의 `Float`(X, Y, Z)이 연속되어 있습니다.
+3.  **좌표 (LWC):** UE 5.1부터 `FVector`는 `Double`(8바이트)을 사용하므로, 멤버 간 간격은 **8바이트**입니다.
+4.  **온도:** 블루프린트 전용 컴포넌트 오프셋(`0xF38`)을 통해 접근하며, 내부 구조체 오프셋을 합산합니다.
