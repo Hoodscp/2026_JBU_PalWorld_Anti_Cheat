@@ -1,11 +1,12 @@
 #pragma once
 #include <windows.h>
+#include <d3d11.h>
 
 namespace Overlay
 {
-    // Hooks DirectX Present to draw ImGui
+    // Initializes the DirectX hook and ImGui
     void Initialize();
     
-    // Unhooks and cleans up ImGui
+    // Shuts down ImGui and clears the hook
     void Shutdown();
 }
