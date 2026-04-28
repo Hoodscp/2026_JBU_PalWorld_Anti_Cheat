@@ -88,20 +88,29 @@ namespace Overlay
 
     void Initialize()
     {
-        std::cout << "[+] Initializing DirectX 11 Hook / ImGui Overlay...\n";
+        std::cout << "[+] Initializing DirectX 11 Hook / ImGui Overlay..." << std::endl;
         bool init_hook = false;
+        int last_error = -1;
         
-        // Kiero가 로드될 때까지 대기
-        if (kiero::init(kiero::RenderType::D3D11) == kiero::Status::Success)
+        // Kiero가 DirectX 인스턴스를 찾을 때까지 무한 재시도 (게임 로딩 지연 대비)
+        do
         {
-            std::cout << "[+] Kiero Initialized! Binding D3D11 Present...\n";
-            // D3D11 Present 메서드의 인덱스는 8번입니다.
-            kiero::bind(8, (void**)&oPresent, hkPresent);
-            init_hook = true;
-        }
-        else {
-            std::cout << "[-] Kiero failed to initialize.\n";
-        }
+            kiero::Status::Enum status = kiero::init(kiero::RenderType::D3D11);
+            if (status == kiero::Status::Success)
+            {
+                std::cout << "[+] Kiero Initialized! Binding D3D11 Present..." << std::endl;
+                kiero::bind(8, (void**)&oPresent, hkPresent);
+                init_hook = true;
+            }
+            else
+            {
+                if (last_error != status) {
+                    std::cout << "[-] Kiero Init (D3D11) Status: " << (int)status << " | Retrying..." << std::endl;
+                    last_error = status;
+                }
+                Sleep(1000); // 1초 대기 후 재시도
+            }
+        } while (!init_hook);
     }
 
     void Shutdown()
