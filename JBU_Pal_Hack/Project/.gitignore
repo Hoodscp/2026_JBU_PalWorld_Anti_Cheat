@@ -1,0 +1,23 @@
+# setup_vendor.bat 로 생성되는 파일 무시
+Vendor/
+
+# CMake & Visual Studio 빌드 파일 무시
+out/
+build/
+.vs/
+*.user
+*.suo
+*.ncb
+*.sdf
+*.opensdf
+*.db
+*.opendb
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+CMakeGenerated/
+Testing/
+Makefile
+*.cmake
+install_manifest.txt
+compile_commands.json
