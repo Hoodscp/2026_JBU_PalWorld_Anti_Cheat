@@ -54,9 +54,27 @@
 
 ---
 
+## 💉 빌드된 DLL 파일 주입(Injection) 및 실행 방법
+
+프로젝트를 빌드하여 `JBU_Pal_Hack.dll` 파일이 성공적으로 생성되었다면, 이를 팰월드 게임 내에 삽입(Inject)해야 작동합니다.
+
+### 1. 인젝터(Injector) 준비
+우리의 코드는 Internal 방식이므로, 게임 프로세스 메모리 공간에 `.dll`을 강제로 밀어넣어 줄 "인젝터(Injector)" 프로그램이 필요합니다. 
+* **학습 목적 (직접 개발)**: `OpenProcess` -> `VirtualAllocEx` -> `WriteProcessMemory` -> `CreateRemoteThread` (보편적인 LoadLibrary 인젝션 기법) API를 이용해 C# 또는 C++로 콘솔 기반의 간단한 인젝터를 직접 만들어보는 것을 적극 권장합니다.
+* **테스트 목적 (상용 툴 사용)**: `Extreme Injector`, `Xenos Injector`, `Cheat Engine`, `Process Hacker` 등의 툴을 사용하여 곧바로 주입 테스트를 진행할 수도 있습니다.
+
+### 2. 실행 순서
+1. **팰월드(Palworld) 게임 실행**: 게임을 로비 화면이나 인게임까지 진입시킵니다.
+2. **DLL 주입(Injection)**: 인젝터를 관리자 권한으로 실행한 뒤, 타겟 프로세스를 `Palworld-Win64-Shipping.exe`로 잡고, 우리가 빌드한 `JBU_Pal_Hack.dll`을 선택하여 주입(Inject)합니다.
+3. **확인**: 코드 내에 포함된 `AllocConsole()`로 인해 검은색 명령 프롬프트(디버그 콘솔) 창이 함께 뜨면서 `[+] JBU Palworld Internal Hack Loaded`라는 문구가 나타난다면 주입에 완벽히 성공한 것입니다!
+4. **종료**: 게임을 끄거나, 스켈레톤 코드에 지정된 종료 단축키(`END` 키)를 누르면 후킹이 풀리며 안전하게 핵이 종료됩니다.
+
+---
+
 ## 🎯 우리의 첫 번째 목표
 1. `ImGui` 및 DirectX 훅 연동을 성공하여 게임 내에 텅 빈 UI 메뉴 창 띄우기
 2. `Memory/Scanner.cpp`를 활용하여 팰월드의 로컬 플레이어 엔티티(Entity)나 언리얼 `uWorld` 오브젝트 주소 알아내기
 3. `SDK` 구조체를 통해 플레이어의 스태미너 주소를 따서 깎이지 않게 락(Lock) 걸어두기!
+4. 콘솔 기반의 초소형 `자체 제작 DLL 인젝터` 파생 프로젝트 만들기!
 
 즐거운 파괴(?) 지향 보안 연구 되시길 바랍니다! 🚀
