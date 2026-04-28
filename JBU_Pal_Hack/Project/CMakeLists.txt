@@ -21,6 +21,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     GUI
     Memory
     SDK
+    fixed_lib
     Vendor/ImGui
     Vendor/MinHook/include
     Vendor/kiero
@@ -42,7 +43,9 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/ImGui/imgui.cpp")
 endif()
 
 # ----- Kiero -----
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/kiero/kiero.cpp")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fixed_lib/kiero.cpp")
+    target_sources(${PROJECT_NAME} PRIVATE fixed_lib/kiero.cpp)
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/kiero/kiero.cpp")
     target_sources(${PROJECT_NAME} PRIVATE Vendor/kiero/kiero.cpp)
 endif()
 
