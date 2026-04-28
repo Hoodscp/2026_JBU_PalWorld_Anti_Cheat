@@ -33,9 +33,16 @@ namespace Overlay
         }
 
         // 메뉴가 켜져있을 경우 게임 시점 조작을 멈추고 ImGui가 마우스를 처리하도록 함
-        if (Menu::Config.bShowMenu) {
+        if (Menu::Config.bShowMenu && init) {
             ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);
-            return true; // 게임에게 입력을 넘기지 않음
+            
+            // 윈도우 그래픽 처리(최소/최대화 등)는 통과시키고,
+            // 게임 내부로 향하는 마우스/키보드 입력 신호만 차단합니다.
+            if ((uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST) ||
+                (uMsg >= WM_KEYFIRST && uMsg <= WM_KEYLAST) ||
+                (uMsg == WM_CHAR) || (uMsg == WM_INPUT)) {
+                return true; 
+            }
         }
 
         return CallWindowProc(oWndProc, hWnd, uMsg, wParam, lParam);
@@ -116,14 +123,25 @@ namespace Overlay
     void Shutdown()
     {
         std::cout << "[+] Shutting down Overlay...\n";
+        
+        // 1. 가장 먼저 Kiero 후킹을 해제하여 더 이상 ImGui 렌더링이 호출되지 않도록 방지
+        kiero::shutdown();
+
+        // 2. 가로채었던 창 입력 신호(WndProc)를 게임 원본으로 원상 복구
+        if (window && oWndProc) {
+            SetWindowLongPtr(window, GWLP_WNDPROC, (LONG_PTR)oWndProc);
+            oWndProc = NULL;
+        }
+
+        // 3. DirectX 프레임 렌더링 중일 수 있으므로 충돌(Race Condition) 방지를 위한 대기
+        Sleep(200);
+
+        // 4. 안전하게 ImGui 메모리 할당 해제
         if (init) {
             ImGui_ImplDX11_Shutdown();
             ImGui_ImplWin32_Shutdown();
             ImGui::DestroyContext();
+            init = false;
         }
-        if (window && oWndProc) {
-            SetWindowLongPtr(window, GWLP_WNDPROC, (LONG_PTR)oWndProc);
-        }
-        kiero::shutdown();
     }
 }

@@ -4,6 +4,9 @@ Vendor/*
 Vendor/kiero/*
 !Vendor/kiero/kiero.h
 !Vendor/kiero/kiero.cpp
+!Vendor/kiero/kiero.vcxproj
+!Vendor/kiero/kiero.vcxproj.filters
+!Vendor/kiero/kiero.vcxproj.user
 
 # CMake & Visual Studio 빌드 파일 무시
 out/
