@@ -8,6 +8,7 @@ add_library(${PROJECT_NAME} SHARED
     GUI/Menu.cpp
     GUI/Overlay.cpp
     Memory/Scanner.cpp
+    SDK/Pal.cpp
     # Memory/HookManager.cpp
 )
 

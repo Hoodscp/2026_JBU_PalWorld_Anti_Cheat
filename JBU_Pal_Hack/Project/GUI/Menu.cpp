@@ -1,4 +1,5 @@
 #include "Menu.h"
+#include "../SDK/Pal.h"
 #include <imgui.h>
 
 namespace Menu
@@ -10,8 +11,7 @@ namespace Menu
         if (!Config.bShowMenu)
             return;
 
-        // 예쁘고 투명도가 있는 프리미엄 디자인
-        ImGui::SetNextWindowSize(ImVec2(400, 300), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(400, 350), ImGuiCond_FirstUseEver);
         
         ImGui::Begin("JBU Palworld Trainer", &Config.bShowMenu, ImGuiWindowFlags_NoCollapse);
         
@@ -26,6 +26,29 @@ namespace Menu
         
         ImGui::Checkbox("Infinite Stamina", &Config.bInfiniteStamina);
         ImGui::Checkbox("Infinite Ammo", &Config.bInfiniteAmmo);
+
+        ImGui::Separator();
+
+        // ----------------------------------------------------
+        // 모듈화된 메모리 접근 구조 반영
+        // ----------------------------------------------------
+        ImGui::Text("[ Real-Time Memory Status ]");
+        
+        // GUI는 오직 SDK에게 데이터만 받아옵니다 (오프셋이나 메모리 계산 전혀 알 필요 없음)
+        int64_t playerHp = SDK::GetLocalPlayerHealth();
+        
+        if (playerHp != -1) {
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Local Player Found!");
+            ImGui::Text("Raw HP Value: %lld", playerHp);
+            ImGui::Text("Display HP: %.1f", (float)(playerHp / 1000.0f));
+            
+            if (Config.bGodMode) {
+                // God Mode 활성화 시 체력을 지속적으로 100만으로 덮어씀
+                SDK::SetLocalPlayerHealth(1000000000); 
+            }
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Player Not Found in World.");
+        }
 
         ImGui::Separator();
         ImGui::Text("Status: Injection Successful");
