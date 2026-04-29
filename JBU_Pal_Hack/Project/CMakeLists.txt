@@ -8,8 +8,9 @@ add_library(${PROJECT_NAME} SHARED
     GUI/Menu.cpp
     GUI/Overlay.cpp
     Memory/Scanner.cpp
+    Memory/HookManager.cpp
+    Memory/Cheats.cpp
     SDK/Pal.cpp
-    # Memory/HookManager.cpp
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)

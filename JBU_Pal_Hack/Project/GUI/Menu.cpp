@@ -41,11 +41,7 @@ namespace Menu
             ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Local Player Found!");
             ImGui::Text("Raw HP Value: %lld", playerHp);
             ImGui::Text("Display HP: %.1f", (float)(playerHp / 1000.0f));
-            
-            if (Config.bGodMode) {
-                // God Mode 활성화 시 체력을 지속적으로 100만으로 덮어씀
-                SDK::SetLocalPlayerHealth(1000000000); 
-            }
+            // 치트 적용은 Cheats::Tick()이 매 프레임 처리 (메뉴 닫혀도 동작 유지).
         } else {
             ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Player Not Found in World.");
         }
