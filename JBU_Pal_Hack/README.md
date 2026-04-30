@@ -10,8 +10,9 @@
 
 이 프로젝트는 빠르고 강력한 네이티브 접근을 위해 **C++** 을 핵심 언어로 사용하며, 세련된 게임 내 UI 송출을 위해 **Dear ImGui** 라이브러리를 DirectX 후킹과 결합하여 사용합니다. (C++ Internal + GUI Hybrid)
 
-- **Internal 방식**: `ReadProcessMemory`/`WriteProcessMemory`에 의존하는 외부(External) 트레이너와 달리, 게임 프로세스 내부에 우리의 코드를 담은 `.dll` 파일을 주입(Injection)하여 게임과 동일한 메모리 권한 및 포인터를 획득합니다.
-- **Dear ImGui**: 게임 화면을 가로채어 최상단에 투명도와 멋진 애니메이션을 지원하는 메뉴 창을 그립니다.
+- **Internal 방식**: 게임 프로세스 내부에 우리의 코드를 담은 `.dll` 파일을 주입(Injection)하여 게임과 동일한 메모리 권한 및 포인터를 획득합니다.
+- **Dear ImGui + Kiero**: 게임의 DirectX 11 `Present` 호출을 가로채 최상단에 반투명 메뉴 창을 그립니다.
+- **MinHook**: 게임 내부 함수까지도 가로채(detour) 동작을 변조할 수 있습니다.
 
 ---
 
@@ -20,66 +21,100 @@
 새로운 팀원은 코드를 작성하기 전 다음 환경을 통일해야 합니다.
 
 1. **필수 설치 사항**
-   - **Visual Studio 2026** (필수 항목: `C++을 사용한 데스크톱 개발` 워크로드 설치)
+   - **Visual Studio 2022 이상** (워크로드: `C++을 사용한 데스크톱 개발`)
    - **Git** (서드파티 모듈 다운로드용)
 
 2. **초기 세팅 방법 (중요)**
-   - 코드를 내려받은 직후, 가장 먼저 `Project` 폴더 안에 있는 **`setup_vendor.bat`** 스크립트를 더블클릭하여 실행합니다.
-   - 위 과정을 거치면 `Vendor` 폴더 내에 `ImGui`, `MinHook` 등 필수 외부 라이브러리 소스들이 자동으로 다운로드됩니다.
-   - 그 후 Visual Studio 2026를 켜고 **"로컬 폴더 열기(Open a local folder)"** 를 통해 `Project` 폴더 자체를 엽니다. (솔루션 파일이 필요 없이 CMakeLists 스크립트에 의해 자동으로 빌드 환경이 세팅됩니다.)
-3. **kiero 파일들 fixed_lib 내 파일로 대체**
-   - 버그 수정을 위해 변경된 서브 모듈 파일들인 kiero.cpp 파일과 kiero.h 파일을 fixed_lib 에 있는 파일로 대체합니다.
+   - 코드를 내려받은 직후, `Project` 폴더 안의 **`setup_vendor.bat`** 을 실행 → `Vendor/` 에 ImGui · MinHook · Kiero가 자동 다운로드됨.
+   - **Kiero 패치 적용 (수동)**: `fixed_lib/kiero.cpp` 와 `kiero.h` 를 `Vendor/kiero/` 로 복사하여 덮어쓰기. (CMake가 우선 `fixed_lib` 쪽을 사용하지만, 인클루드 경로 안전성을 위해 동기화 권장)
+   - Visual Studio에서 **"로컬 폴더 열기 (Open a local folder)"** 로 `Project` 폴더를 그대로 열면 CMake가 자동으로 빌드 환경을 잡습니다.
 
 ---
 
 ## 📂 디렉토리 (모듈) 역할 분담 구조
 
-코드 충돌(Merge Conflict)을 방지하고 각자의 장점을 살리기 위해, `Project` 내부 폴더를 다음과 같이 분할하였습니다.
-
-### 1. `Core/` (메인 루프 및 초기화)
-
-- `dllmain.cpp` : 인젝터에 의해 DLL이 최초 주입되었을 때 실행되는 시작점입니다.
-- `HackMain.cpp` : 콘솔창 할당, 스레드 초기화, 핵 종료 등의 전반적인 사이클을 관리합니다.
-
-### 2. `GUI/` (디자인/렌더링 담당 영역 🎨)
-
-- `Overlay.cpp` : DirectX 함수(Present)를 찾아내어 가로채고(Hook), ImGui 캔버스를 준비합니다.
-- `Menu.cpp` : 실제 화면에 그려질 핵 메뉴(체크박스, 컬러, 버튼) 등을 디자인하고 배치합니다.
-
-### 3. `Memory/` (해킹 및 코어 로직 담당 영역 🧠)
-
-- `Scanner.cpp` : AOB (Array of Bytes) 패턴 스캐닝을 이용해 게임이 업데이트되어도 깨지지 않는 오프셋 주소를 찾아냅니다.
-- `HookManager.h` : 타겟 시스템 또는 엔진 내부 함수를 `MinHook` 등을 활용해 낚아채서 우리가 원하는 동작으로 바꿉니다.
-
-### 4. `SDK/` (게임 데이터 연결/매핑 부서 🗺️)
-
-- `Pal.h` / `Pal.cpp` : 게임 내부 메모리 구조(오프셋)를 C++ 함수로 다루기 쉽게 포장(Wrapper)해둔 공간입니다.
-- `Engine_structs.h` / `Pal_structs.h` : 향후 UE4SS 등으로 추출한 언리얼 엔진 구조체를 모아둡니다. GUI 부서는 오직 SDK의 함수들만 호출하여 결합도를 낮춥니다!
-
-### 5. `Vendor/` & `fixed_lib/` (서드파티 의존성)
-
-- `setup_vendor.bat` 스크립트를 통해 `ImGui`, `MinHook`, `Kiero` 라이브러리가 `Vendor/`에 자동 복사됩니다.
-- ⚠️ **Git Submodule 주의사항**: `Vendor/` 하위 파일들을 직접 수정하면, 해당 폴더들 내부에 포함된 자체 `.git` 폴더 때문에 상위 프로젝트의 Git 서버에 제대로 푸시(Push)가 되지 않습니다. (Untracked Submodule 경고 발생)
-- 이를 해결하기 위해 직접 `kiero` 코드의 옵션을 수정해야 했던 부분은 **`fixed_lib/`** 디렉토리로 꺼내어 별도로 안전하게 GitHub에 동기화되도록 설정했습니다!
-
----
-
-## 💉 빌드된 DLL 파일 주입(Injection) 및 실행 방법
-
-프로젝트를 빌드하여 `JBU_Pal_Hack.dll` 파일이 성공적으로 생성되었다면, 이를 `Pal_Injector.exe`가 위치한 곳에 옮겨 주입하면 작동합니다!
-
-1. **팰월드(Palworld) 로비 진입**: 팰월드의 스팀 시작 옵션에 `-d3d11` 을 적고 게임을 실행합니다. (DirectX 11 모드 강제)
-2. **DLL 주입(Injection)**: `Injector` 폴더에서 직접 만든 `Pal_Injector.exe`를 관리자 권한으로 실행하면 자동으로 `JBU_Pal_Hack.dll`을 게임에 매핑시킵니다.
-3. **확인**: 콘솔창에 `[+] Kiero Initialized! Binding D3D11 Present...`가 출력되면 인게임에서 `INSERT` 키를 누르세요. 반투명한 프리미엄 ImGui 치트 창과 실시간 체력이 켜집니다!
-4. **종료**: `END` 키를 누르면 후킹이 해제되며 안전하게 디테치됩니다.
+```
+Project/
+├── Core/                   ← DLL 진입점 + 메인 루프
+│   ├── dllmain.cpp
+│   └── HackMain.cpp/h
+├── GUI/                    ← ImGui 오버레이 + 메뉴 디자인
+│   ├── Overlay.cpp/h
+│   └── Menu.cpp/h
+├── Memory/                 ← 공용 인프라 (모든 치트가 사용)
+│   ├── Scanner.cpp/h           AOB 패턴 스캐너
+│   ├── HookManager.cpp/h       MinHook 래퍼 (CreateHook 한 줄로 후킹)
+│   └── CursorHooks.cpp/h       시스템 후킹 (마우스 잠금 우회 등)
+├── SDK/                    ← 게임 데이터 정의
+│   ├── Offsets.h               포인터 체인용 오프셋 상수
+│   ├── Signatures.h            함수 후킹용 AOB 시그니처
+│   └── Pal.cpp/h               고수준 게임 객체 접근 API
+├── Cheats/                 ← ⭐ 실제 치트 기능 (개발자가 작업하는 곳)
+│   ├── MemoryCheats/           Track 1: 오프셋 기반 메모리 변조
+│   │   ├── GodMode.cpp/h
+│   │   └── README.md           ← Track 1 개발 가이드
+│   └── HookCheats/             Track 2: AOB + 함수 후킹
+│       ├── ExampleHook.cpp/h
+│       └── README.md           ← Track 2 개발 가이드
+├── fixed_lib/              ← Kiero 패치 (Vendor 덮어쓰기용)
+└── Vendor/                 ← 서드파티 (setup_vendor.bat이 채움)
+```
 
 ---
 
-## 🎯 개발 진행 현황 (Phase 2 진행 중)
+## 🚀 개발 워크플로우 — 어디서부터 작업하면 되나?
 
-- ✅ (완료) `ImGui` 및 DirectX 11 후킹 성공 및 투명 오버레이 표출
-- ✅ (완료) 콘솔 기반의 자체 제작 C++ `LoadLibrary` 인젝터 개발
-- ✅ (완료) 메모리/SDK/GUI 모듈 분리 및 실시간 체력(HP) 오프셋 포인터 추적 구현
-- 🚀 (진행중) `UE4SS` 분석을 통한 플레이어 스태미너, 탄약 객체 주소 연동 및 갓 모드(God Mode) 로직 고도화
+새 치트를 만들 때는 **두 가지 트랙 중 하나**를 고릅니다. 트랙은 *기술적 접근 방식*의 차이일 뿐 둘 다 동일한 메뉴 / SDK 인프라를 공유합니다.
 
-즐거운 파괴(?) 지향 보안 연구 되시길 바랍니다! 🚀
+### Track 1 — 오프셋 기반 메모리 변조 (`Cheats/MemoryCheats/`)
+**언제?** HP, 스태미나, 탄약, 골드처럼 평문 값으로 메모리에 저장된 데이터를 직접 read/write 하고 싶을 때. **단순하고 빠르게 시작 가능**.
+
+**워크플로우 한눈에**:
+```
+SDK/Offsets.h 에 오프셋 등록
+  → SDK/Pal.cpp 에 getter/setter 추가
+  → GUI/Menu.h 에 체크박스 플래그 추가
+  → Cheats/MemoryCheats/<MyCheat>.cpp 작성 (Tick 함수)
+  → Core/HackMain.cpp::MainLoop 에 한 줄 추가
+  → CMakeLists.txt 에 한 줄 추가
+```
+👉 **상세 가이드**: [`Project/Cheats/MemoryCheats/README.md`](Project/Cheats/MemoryCheats/README.md)
+
+### Track 2 — AOB 시그니처 + 함수 후킹 (`Cheats/HookCheats/`)
+**언제?** 데미지 계산, 자원 소모 같은 **로직 자체**를 변경하고 싶을 때. 메모리 폴링보다 안정적이고 안티치트에 덜 노출.
+
+**워크플로우 한눈에**:
+```
+IDA/Ghidra로 게임 함수 분석 → AOB 패턴 추출
+  → SDK/Signatures.h 에 시그니처 등록
+  → Cheats/HookCheats/<MyHook>.cpp 작성 (detour + Install)
+  → Core/HackMain.cpp::Initialize 에 Install() 호출 한 줄 추가
+  → CMakeLists.txt 에 한 줄 추가
+```
+👉 **상세 가이드**: [`Project/Cheats/HookCheats/README.md`](Project/Cheats/HookCheats/README.md)
+
+### 두 트랙은 자유롭게 섞어 써도 됨
+하나의 치트 토글(`bGodMode`)이 **메모리 폴링(Track 1)** 과 **함수 후킹(Track 2)** 양쪽에서 동시에 작동해도 무방. 실제로 `GodMode`는 현재 Track 1로 동작 중이고, `ExampleHook`은 같은 토글을 Track 2로 강화하는 skeleton.
+
+---
+
+## 💉 빌드 후 DLL 주입 및 실행
+
+1. **팰월드 실행**: 스팀 시작 옵션에 `-d3d11` 추가 후 게임 시작 (DirectX 11 모드 강제).
+2. **DLL 주입**: `Injector/` 폴더에서 빌드한 `Pal_Injector.exe`를 관리자 권한으로 실행하면 `JBU_Pal_Hack.dll` 을 자동 매핑.
+3. **인게임 메뉴**: 콘솔 로그에 `[+] Kiero Initialized!` 가 뜨면 `INSERT` 키로 메뉴 토글.
+4. **종료**: `END` 키로 안전 디테치. 재주입 가능.
+
+---
+
+## 🎯 개발 진행 현황
+
+- ✅ ImGui + DirectX 11 후킹 (Kiero 기반 universal hook)
+- ✅ C++ LoadLibrary 인젝터 (`Injector/`)
+- ✅ 메모리/SDK/GUI 모듈 분리 + 실시간 HP 포인터 추적
+- ✅ AOB 스캐너 실제 구현 (IDA-style 패턴)
+- ✅ MinHook 래퍼 (`HookManager`) + 시스템 후킹 (커서/raw input)
+- ✅ Cheats 디렉토리 분리 (Track 1 / Track 2 구조)
+- 🚀 (진행중) Phase 2: 실제 게임 함수 시그니처 분석 + DamageHook · AmmoHook 등 채우기
+
+즐거운 보안 연구 되시길! 🚀
