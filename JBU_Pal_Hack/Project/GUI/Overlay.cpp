@@ -26,24 +26,28 @@ std::atomic<bool> g_shuttingDown{false};
 
 namespace Overlay
 {
-    LRESULT __stdcall WndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    LRESULT __stdcall WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         // 메뉴 단축키(VK_INSERT) 토글
         if (uMsg == WM_KEYDOWN && wParam == VK_INSERT) {
             Menu::Config.bShowMenu = !Menu::Config.bShowMenu;
-            return 1; // 입력 무시
+            return 1;
         }
 
-        // 메뉴가 켜져있을 경우 게임 시점 조작을 멈추고 ImGui가 마우스를 처리하도록 함
-        if (Menu::Config.bShowMenu && init.load()) {
+        // ImGui에 항상 메시지 forward — io.MousePos / focus / hover 같은 내부 상태가
+        // 끊기지 않도록 (메뉴 처음 여는 순간에 좌표가 stale인 문제 방지).
+        if (init.load()) {
             ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);
+        }
 
-            // 윈도우 그래픽 처리(최소/최대화 등)는 통과시키고,
-            // 게임 내부로 향하는 마우스/키보드 입력 신호만 차단합니다.
-            if ((uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST) ||
-                (uMsg >= WM_KEYFIRST && uMsg <= WM_KEYLAST) ||
-                (uMsg == WM_CHAR) || (uMsg == WM_INPUT)) {
-                return 1;
-            }
+        // 메뉴가 켜져 있고 ImGui가 입력을 원할 때만 게임으로 가는 메시지 차단.
+        if (Menu::Config.bShowMenu && init.load()) {
+            ImGuiIO& io = ImGui::GetIO();
+            const bool isMouse = (uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST);
+            const bool isKey   = (uMsg >= WM_KEYFIRST && uMsg <= WM_KEYLAST) || uMsg == WM_CHAR;
+
+            if (isMouse && io.WantCaptureMouse)    return 1;
+            if (isKey   && io.WantCaptureKeyboard) return 1;
+            if (uMsg == WM_INPUT)                  return 1; // raw input은 메뉴 중 항상 차단
         }
 
         return CallWindowProc(oWndProc, hWnd, uMsg, wParam, lParam);
@@ -75,8 +79,7 @@ namespace Overlay
                 ImGui::CreateContext();
                 ImGuiIO& io = ImGui::GetIO();
                 io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
-                // 게임이 시스템 커서를 숨겨도 ImGui가 자체 소프트웨어 커서를 그림.
-                io.MouseDrawCursor = true;
+                // io.MouseDrawCursor는 매 프레임 OS 커서 가시성에 따라 동적 결정.
                 ImGui::StyleColorsDark();
 
                 ImGui_ImplWin32_Init(window);
@@ -84,6 +87,18 @@ namespace Overlay
                 init.store(true);
             }
             else return oPresent(pSwapChain, SyncInterval, Flags);
+        }
+
+        // OS 커서가 보이는 상태(메인메뉴/로비)에선 sw 커서를 끄고, 게임이 OS
+        // 커서를 숨긴 상태(인게임)에서만 sw 커서를 그려 커서가 두 개로 보이는
+        // 문제를 방지합니다.
+        {
+            ImGuiIO& io = ImGui::GetIO();
+            CURSORINFO ci = { sizeof(ci) };
+            GetCursorInfo(&ci);
+            const bool osVisible  = (ci.flags & CURSOR_SHOWING) != 0;
+            const bool wantCursor = Menu::Config.bShowMenu || Menu::Config.bFreeMouse;
+            io.MouseDrawCursor = wantCursor && !osVisible;
         }
 
         ImGui_ImplDX11_NewFrame();
