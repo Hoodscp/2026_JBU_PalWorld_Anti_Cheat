@@ -47,13 +47,6 @@ namespace Menu
         }
 
         ImGui::Separator();
-        ImGui::Text("Input");
-        ImGui::Checkbox("Free Mouse Cursor", &Config.bFreeMouse);
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("메뉴를 닫아도 마우스 잠금 해제를 유지합니다.\n(켜져 있는 동안 게임 시점 회전은 동작하지 않음)");
-        }
-
-        ImGui::Separator();
         ImGui::Text("Status: Injection Successful");
 
         ImGui::End();

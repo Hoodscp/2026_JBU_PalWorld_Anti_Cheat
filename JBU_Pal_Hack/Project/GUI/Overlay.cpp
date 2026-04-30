@@ -96,9 +96,8 @@ namespace Overlay
             ImGuiIO& io = ImGui::GetIO();
             CURSORINFO ci = { sizeof(ci) };
             GetCursorInfo(&ci);
-            const bool osVisible  = (ci.flags & CURSOR_SHOWING) != 0;
-            const bool wantCursor = Menu::Config.bShowMenu || Menu::Config.bFreeMouse;
-            io.MouseDrawCursor = wantCursor && !osVisible;
+            const bool osVisible = (ci.flags & CURSOR_SHOWING) != 0;
+            io.MouseDrawCursor = Menu::Config.bShowMenu && !osVisible;
         }
 
         ImGui_ImplDX11_NewFrame();

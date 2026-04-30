@@ -3,15 +3,22 @@ project(JBU_Pal_Hack VERSION 1.0.0)
 
 # Build DLL
 add_library(${PROJECT_NAME} SHARED
+    # Core
     Core/dllmain.cpp
     Core/HackMain.cpp
+    # GUI
     GUI/Menu.cpp
     GUI/Overlay.cpp
+    # 인프라 (스캐너, 후킹 매니저, 시스템 후킹)
     Memory/Scanner.cpp
     Memory/HookManager.cpp
     Memory/CursorHooks.cpp
-    Memory/Cheats.cpp
+    # SDK (오프셋 기반 게임 데이터 접근)
     SDK/Pal.cpp
+    # Track 1: 오프셋 기반 메모리 치트 (각 기능 = 1 파일)
+    Cheats/MemoryCheats/GodMode.cpp
+    # Track 2: AOB + 함수 후킹 치트 (각 기능 = 1 파일)
+    Cheats/HookCheats/ExampleHook.cpp
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
@@ -29,8 +36,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     Vendor/kiero
 )
 
-# Link essential D3D11 and Windows libs
-target_link_libraries(${PROJECT_NAME} PRIVATE d3d11 d3dcompiler user32 kernel32)
+# Link essential D3D11 and Windows libs (psapi: GetModuleInformation in Scanner)
+target_link_libraries(${PROJECT_NAME} PRIVATE d3d11 d3dcompiler user32 kernel32 psapi)
 
 # ----- ImGui -----
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Vendor/ImGui/imgui.cpp")

@@ -5,7 +5,8 @@
 #include "../GUI/Overlay.h"
 #include "../Memory/HookManager.h"
 #include "../Memory/CursorHooks.h"
-#include "../Memory/Cheats.h"
+#include "../Cheats/MemoryCheats/GodMode.h"
+#include "../Cheats/HookCheats/ExampleHook.h"
 
 namespace HackMain
 {
@@ -27,8 +28,12 @@ namespace HackMain
         // 2. Initialize Hooking (MinHook / Kiero)
         HookManager::Initialize();
 
-        // 2-1. Install function hooks (cursor lock bypass for ImGui)
+        // 2-1. Install system-level hooks (cursor lock bypass for ImGui)
         CursorHooks::Install();
+
+        // 2-2. Install game-function hooks (Track 2: HookCheats).
+        // 새 후킹 치트는 여기에 한 줄씩 추가.
+        ExampleHook::Install();
 
         // 3. Initialize GUI Overlay (ImGui Render Hook)
         Overlay::Initialize();
@@ -66,8 +71,9 @@ namespace HackMain
                 break;
             }
 
-            // 매 프레임 활성화된 치트들을 적용 (Menu visibility와 무관)
-            Cheats::Tick();
+            // 매 프레임 활성화된 메모리 치트들을 적용 (Track 1: MemoryCheats).
+            // 새 메모리 치트는 여기에 한 줄씩 추가.
+            GodMode::Tick();
 
             Sleep(10); // Prevent CPU maxout
         }

@@ -15,17 +15,13 @@ namespace CursorHooks
     static ClipCursor_t              oClipCursor              = nullptr;
     static RegisterRawInputDevices_t oRegisterRawInputDevices = nullptr;
 
-    static bool ShouldUnlock() {
-        return Menu::Config.bShowMenu || Menu::Config.bFreeMouse;
-    }
-
     static BOOL WINAPI hkSetCursorPos(int X, int Y) {
-        if (ShouldUnlock()) return TRUE; // no-op: 게임의 중앙 고정 차단
+        if (Menu::Config.bShowMenu) return TRUE; // no-op: 게임의 중앙 고정 차단
         return oSetCursorPos(X, Y);
     }
 
     static BOOL WINAPI hkClipCursor(const RECT* lpRect) {
-        if (ShouldUnlock()) return oClipCursor(nullptr); // 클립 강제 해제
+        if (Menu::Config.bShowMenu) return oClipCursor(nullptr); // 클립 강제 해제
         return oClipCursor(lpRect);
     }
 
