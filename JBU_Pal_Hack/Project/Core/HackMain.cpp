@@ -4,6 +4,7 @@
 #include <atomic>
 #include "../GUI/Overlay.h"
 #include "../Memory/HookManager.h"
+#include "../Memory/CursorHooks.h"
 #include "../Memory/Cheats.h"
 
 namespace HackMain
@@ -25,6 +26,9 @@ namespace HackMain
 
         // 2. Initialize Hooking (MinHook / Kiero)
         HookManager::Initialize();
+
+        // 2-1. Install function hooks (cursor lock bypass for ImGui)
+        CursorHooks::Install();
 
         // 3. Initialize GUI Overlay (ImGui Render Hook)
         Overlay::Initialize();

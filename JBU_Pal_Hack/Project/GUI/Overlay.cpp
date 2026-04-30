@@ -74,7 +74,9 @@ namespace Overlay
                 // ImGui 초기화
                 ImGui::CreateContext();
                 ImGuiIO& io = ImGui::GetIO();
-                io.ConfigFlags = ImGuiConfigFlags_NoMouseCursorChange; // 자체 커서 관리
+                io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+                // 게임이 시스템 커서를 숨겨도 ImGui가 자체 소프트웨어 커서를 그림.
+                io.MouseDrawCursor = true;
                 ImGui::StyleColorsDark();
 
                 ImGui_ImplWin32_Init(window);
