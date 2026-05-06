@@ -9,7 +9,6 @@
 #include "../Cheats/MemoryCheats/PlayerCheats.h"
 #include "../Cheats/MemoryCheats/TechCheats.h"
 #include "../Cheats/MemoryCheats/InventoryCheats.h"
-#include "../Cheats/MemoryCheats/TempControl.h"
 #include "../Cheats/HookCheats/ExampleHook.h"
 
 namespace HackMain
@@ -81,7 +80,6 @@ namespace HackMain
             PlayerCheats::Tick();
             TechCheats::Tick();
             InventoryCheats::Tick();
-            TempControl::Tick();
 
             Sleep(10); // Prevent CPU maxout
         }

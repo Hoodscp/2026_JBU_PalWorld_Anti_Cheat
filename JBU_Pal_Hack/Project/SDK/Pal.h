@@ -14,8 +14,10 @@ namespace SDK
     uintptr_t GetCharacterParameterComponent();
     uintptr_t GetIndividualParameter();
     uintptr_t GetLocalTechnologyData();
-    uintptr_t GetLocalItemContainer();
-    uintptr_t GetItemSlotAt(int index);
+    uintptr_t GetLocalInventoryData();
+    uintptr_t GetLocalInventoryMultiHelper();
+    uintptr_t GetInventoryContainerAt(int containerIndex);
+    uintptr_t GetItemSlotAt(int containerIndex, int slotIndex);
 
     // ───── HP ─────
     int64_t GetLocalPlayerHealth();
@@ -44,13 +46,10 @@ namespace SDK
     int  GetLocalTechnologyPoint();
     bool SetLocalTechnologyPoint(int value);
 
-    // ───── Inventory ItemSlot[index] ─────
-    // 첫 슬롯의 StackCount 를 읽거나 덮어씁니다. 실패 시 -1 / false.
-    int  GetItemSlotStackCount(int index);
-    bool SetItemSlotStackCount(int index, int value);
-
-    // ───── CurrentTemperature (int32, on UPalBodyTemperatureComponent) ─────
-    // BodyTemperatureComponent 오프셋이 0(미해결)이면 -1 반환.
-    int  GetLocalPlayerCurrentTemperature();
-    bool SetLocalPlayerCurrentTemperature(int value);
+    // ───── Inventory ItemSlot[containerIndex][slotIndex] ─────
+    // 체인: PlayerState → InventoryData → MultiHelper → Containers[containerIndex]
+    //       → ItemSlotArray[slotIndex] → StackCount
+    // 실패 시 -1 / false.
+    int  GetItemSlotStackCount(int containerIndex, int slotIndex);
+    bool SetItemSlotStackCount(int containerIndex, int slotIndex, int value);
 }

@@ -61,25 +61,44 @@ namespace SDK
         return Step(GetLocalPlayerState(), Offsets::PlayerState::TechnologyData);
     }
 
-    uintptr_t GetLocalItemContainer()
+    uintptr_t GetLocalInventoryData()
     {
-        return Step(GetCharacterParameterComponent(), Offsets::CharParamComp::ItemContainer);
+        return Step(GetLocalPlayerState(), Offsets::PlayerState::InventoryData);
     }
 
-    uintptr_t GetItemSlotAt(int index)
+    uintptr_t GetLocalInventoryMultiHelper()
     {
-        if (index < 0) return 0;
-        uintptr_t container = GetLocalItemContainer();
+        return Step(GetLocalInventoryData(), Offsets::InventoryData::InventoryMultiHelper);
+    }
+
+    uintptr_t GetInventoryContainerAt(int containerIndex)
+    {
+        if (containerIndex < 0) return 0;
+        uintptr_t helper = GetLocalInventoryMultiHelper();
+        if (!helper) return 0;
+
+        int32_t num = Scanner::ReadMemory<int32_t>(helper + Offsets::MultiHelper::Containers_Num);
+        if (containerIndex >= num) return 0;
+
+        uintptr_t arrData = Scanner::ReadMemory<uintptr_t>(helper + Offsets::MultiHelper::Containers_Data);
+        if (!arrData) return 0;
+
+        return Scanner::ReadMemory<uintptr_t>(arrData + (uintptr_t)containerIndex * sizeof(uintptr_t));
+    }
+
+    uintptr_t GetItemSlotAt(int containerIndex, int slotIndex)
+    {
+        if (slotIndex < 0) return 0;
+        uintptr_t container = GetInventoryContainerAt(containerIndex);
         if (!container) return 0;
 
-        // ItemSlotArray 가 비어있거나 index 가 범위 밖이면 0.
         int32_t num = Scanner::ReadMemory<int32_t>(container + Offsets::ItemContainer::ItemSlotArray_Num);
-        if (index >= num) return 0;
+        if (slotIndex >= num) return 0;
 
         uintptr_t arrData = Scanner::ReadMemory<uintptr_t>(container + Offsets::ItemContainer::ItemSlotArray_Data);
         if (!arrData) return 0;
 
-        return Scanner::ReadMemory<uintptr_t>(arrData + (uintptr_t)index * sizeof(uintptr_t));
+        return Scanner::ReadMemory<uintptr_t>(arrData + (uintptr_t)slotIndex * sizeof(uintptr_t));
     }
 
     // ───── HP ─────
@@ -194,39 +213,17 @@ namespace SDK
     }
 
     // ───── Inventory ─────
-    int GetItemSlotStackCount(int index)
+    int GetItemSlotStackCount(int containerIndex, int slotIndex)
     {
-        uintptr_t slot = GetItemSlotAt(index);
+        uintptr_t slot = GetItemSlotAt(containerIndex, slotIndex);
         if (!slot) return -1;
         return Scanner::ReadMemory<int32_t>(slot + Offsets::ItemSlot::StackCount);
     }
 
-    bool SetItemSlotStackCount(int index, int value)
+    bool SetItemSlotStackCount(int containerIndex, int slotIndex, int value)
     {
-        uintptr_t slot = GetItemSlotAt(index);
+        uintptr_t slot = GetItemSlotAt(containerIndex, slotIndex);
         if (!slot) return false;
         return WriteAt<int32_t>(slot + Offsets::ItemSlot::StackCount, value);
-    }
-
-    // ───── CurrentTemperature ─────
-    // PlayerCharacter::BodyTemperatureComponent 오프셋이 0 이면 비활성으로 처리.
-    static uintptr_t GetBodyTemperatureComponent()
-    {
-        if (Offsets::PlayerCharacter::BodyTemperatureComponent == 0) return 0;
-        return Step(GetLocalPawn(), Offsets::PlayerCharacter::BodyTemperatureComponent);
-    }
-
-    int GetLocalPlayerCurrentTemperature()
-    {
-        uintptr_t comp = GetBodyTemperatureComponent();
-        if (!comp) return -1;
-        return Scanner::ReadMemory<int32_t>(comp + Offsets::BodyTemperatureComp::CurrentTemperature);
-    }
-
-    bool SetLocalPlayerCurrentTemperature(int value)
-    {
-        uintptr_t comp = GetBodyTemperatureComponent();
-        if (!comp) return false;
-        return WriteAt<int32_t>(comp + Offsets::BodyTemperatureComp::CurrentTemperature, value);
     }
 }

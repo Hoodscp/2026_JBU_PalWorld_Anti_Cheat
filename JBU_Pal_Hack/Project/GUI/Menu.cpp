@@ -36,26 +36,19 @@ namespace Menu
         ImGui::SeparatorText("Inventory");
         ImGui::Checkbox("Force Item StackCount", &Config.bForceItemStack);
         ImGui::SetNextItemWidth(120);
+        ImGui::InputInt("Container Index", &Config.SelectedContainerIdx);
+        if (Config.SelectedContainerIdx < 0) Config.SelectedContainerIdx = 0;
+        ImGui::SetNextItemWidth(120);
         ImGui::InputInt("Slot Index", &Config.SelectedSlotIndex);
         if (Config.SelectedSlotIndex < 0) Config.SelectedSlotIndex = 0;
         ImGui::SetNextItemWidth(120);
         ImGui::InputInt("Stack Count", &Config.TargetStackCount);
 
-        int curStack = SDK::GetItemSlotStackCount(Config.SelectedSlotIndex);
-        if (curStack >= 0) ImGui::Text("Slot[%d] StackCount: %d", Config.SelectedSlotIndex, curStack);
-        else               ImGui::TextDisabled("Slot[%d]: empty / out-of-range", Config.SelectedSlotIndex);
-    }
-
-    static void DrawTemperatureSection()
-    {
-        ImGui::SeparatorText("Environment");
-        ImGui::Checkbox("Force Temperature", &Config.bForceTemperature);
-        ImGui::SetNextItemWidth(120);
-        ImGui::InputInt("Target Temp (C)", &Config.TargetTemperature);
-
-        int t = SDK::GetLocalPlayerCurrentTemperature();
-        if (t != -1) ImGui::Text("Current Temperature: %d C", t);
-        else         ImGui::TextDisabled("Temperature: <component offset unresolved>");
+        int curStack = SDK::GetItemSlotStackCount(Config.SelectedContainerIdx, Config.SelectedSlotIndex);
+        if (curStack >= 0) ImGui::Text("Container[%d].Slot[%d] StackCount: %d",
+                                       Config.SelectedContainerIdx, Config.SelectedSlotIndex, curStack);
+        else               ImGui::TextDisabled("Container[%d].Slot[%d]: empty / out-of-range",
+                                                Config.SelectedContainerIdx, Config.SelectedSlotIndex);
     }
 
     static void DrawStatusSection()
@@ -93,7 +86,6 @@ namespace Menu
         DrawPlayerSection();
         DrawTechSection();
         DrawInventorySection();
-        DrawTemperatureSection();
         DrawStatusSection();
 
         ImGui::Separator();

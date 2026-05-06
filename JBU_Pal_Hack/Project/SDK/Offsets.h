@@ -34,6 +34,7 @@ namespace SDK::Offsets
     }
     namespace PlayerState {
         constexpr uintptr_t PawnPrivate    = 0x308;
+        constexpr uintptr_t InventoryData  = 0x5D8; // UPalPlayerInventoryData*
         constexpr uintptr_t TechnologyData = 0x5E8; // UPalTechnologyData*
     }
     namespace Pawn {
@@ -42,7 +43,14 @@ namespace SDK::Offsets
     namespace CharParamComp {
         constexpr uintptr_t IndividualParameter = 0x130;
         constexpr uintptr_t SP                  = 0x328; // FFixedPoint64 (Stamina)
-        constexpr uintptr_t ItemContainer       = 0x460; // UPalItemContainer*
+    }
+    namespace InventoryData {
+        constexpr uintptr_t InventoryMultiHelper = 0x190; // UPalItemContainerMultiHelper*
+    }
+    namespace MultiHelper {
+        // TArray<UPalItemContainer*> Containers;
+        constexpr uintptr_t Containers_Data = 0x38;
+        constexpr uintptr_t Containers_Num  = 0x40;
     }
 
     // ───── 게임 데이터 (실제 치트 타겟) ─────
@@ -72,20 +80,5 @@ namespace SDK::Offsets
 
     namespace ItemSlot {
         constexpr uintptr_t StackCount = 0x154; // int32
-    }
-
-    // ───── 미해결 (런타임 검증 필요) ─────
-    // CurrentTemperature 는 UPalBodyTemperatureComponent 의 +0x130 (FPalTemperatureInfo
-    // 첫 번째 int32) 에 위치하지만 SDK 덤프에 컴포넌트 포인터가 명시돼 있지 않음.
-    // 게임 내에서 Cheat Engine 등으로 컴포넌트 시작주소(BodyTempComp on APalPlayerCharacter)
-    // 를 찾은 뒤 PlayerCharacter 베이스 ↔ 컴포넌트 차이를 여기에 등록.
-    namespace BodyTemperatureComp {
-        // UPalBodyTemperatureComponent 내부 — TemperatureInfo 의 첫 int32 가 현재값.
-        constexpr uintptr_t CurrentTemperature = 0x130;
-    }
-    namespace PlayerCharacter {
-        // TODO: 런타임에 BodyTemperatureComponent 포인터를 잡으면 갱신할 것.
-        // 0 일 경우 Pal.cpp 의 getter 가 -1 을 반환해 안전하게 NOP 처리됨.
-        constexpr uintptr_t BodyTemperatureComponent = 0x0;
     }
 }

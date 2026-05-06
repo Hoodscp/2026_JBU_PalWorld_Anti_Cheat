@@ -22,13 +22,10 @@ namespace Menu
         bool bFreeTechPoint   = false; // TechnologyPoint = 9999
 
         // ── 신규: 인벤토리 ──
-        bool bForceItemStack    = false;
-        int  SelectedSlotIndex  = 0;
-        int  TargetStackCount   = 9999;
-
-        // ── 신규: 환경 ──
-        bool bForceTemperature  = false;
-        int  TargetTemperature  = 22; // ℃
+        bool bForceItemStack       = false;
+        int  SelectedContainerIdx  = 0;
+        int  SelectedSlotIndex     = 0;
+        int  TargetStackCount      = 9999;
     };
 
     extern Settings Config;
