@@ -11,6 +11,15 @@ namespace SDK
             if (!base) return 0;
             return Scanner::ReadMemory<uintptr_t>(base + offset);
         }
+
+        // 일반화된 typed write 헬퍼.
+        template <typename T>
+        inline bool WriteAt(uintptr_t address, T value) {
+            if (!address) return false;
+            if (IsBadWritePtr((void*)address, sizeof(T))) return false;
+            *(T*)address = value;
+            return true;
+        }
     }
 
     uintptr_t GetGWorld()
@@ -47,6 +56,33 @@ namespace SDK
         return Step(GetCharacterParameterComponent(), Offsets::CharParamComp::IndividualParameter);
     }
 
+    uintptr_t GetLocalTechnologyData()
+    {
+        return Step(GetLocalPlayerState(), Offsets::PlayerState::TechnologyData);
+    }
+
+    uintptr_t GetLocalItemContainer()
+    {
+        return Step(GetCharacterParameterComponent(), Offsets::CharParamComp::ItemContainer);
+    }
+
+    uintptr_t GetItemSlotAt(int index)
+    {
+        if (index < 0) return 0;
+        uintptr_t container = GetLocalItemContainer();
+        if (!container) return 0;
+
+        // ItemSlotArray 가 비어있거나 index 가 범위 밖이면 0.
+        int32_t num = Scanner::ReadMemory<int32_t>(container + Offsets::ItemContainer::ItemSlotArray_Num);
+        if (index >= num) return 0;
+
+        uintptr_t arrData = Scanner::ReadMemory<uintptr_t>(container + Offsets::ItemContainer::ItemSlotArray_Data);
+        if (!arrData) return 0;
+
+        return Scanner::ReadMemory<uintptr_t>(arrData + (uintptr_t)index * sizeof(uintptr_t));
+    }
+
+    // ───── HP ─────
     int64_t GetLocalPlayerHealth()
     {
         uintptr_t param = GetIndividualParameter();
@@ -58,11 +94,139 @@ namespace SDK
     {
         uintptr_t param = GetIndividualParameter();
         if (!param) return false;
+        return WriteAt<int64_t>(param + Offsets::IndividualParam::HP, hpVal);
+    }
 
-        uintptr_t hpAddress = param + Offsets::IndividualParam::HP;
-        if (IsBadWritePtr((void*)hpAddress, sizeof(int64_t))) return false;
+    int64_t GetLocalPlayerMaxHP()
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return -1;
+        return Scanner::ReadMemory<int64_t>(param + Offsets::IndividualParam::MaxHP);
+    }
 
-        *(int64_t*)hpAddress = hpVal;
-        return true;
+    // ───── Stamina (SP) ─────
+    int64_t GetLocalPlayerStamina()
+    {
+        uintptr_t comp = GetCharacterParameterComponent();
+        if (!comp) return -1;
+        return Scanner::ReadMemory<int64_t>(comp + Offsets::CharParamComp::SP);
+    }
+
+    bool SetLocalPlayerStamina(int64_t spVal)
+    {
+        uintptr_t comp = GetCharacterParameterComponent();
+        if (!comp) return false;
+        return WriteAt<int64_t>(comp + Offsets::CharParamComp::SP, spVal);
+    }
+
+    // ───── FullStomach ─────
+    float GetLocalPlayerFullStomach()
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return -1.0f;
+        return Scanner::ReadMemory<float>(param + Offsets::IndividualParam::FullStomach);
+    }
+
+    bool SetLocalPlayerFullStomach(float value)
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return false;
+        return WriteAt<float>(param + Offsets::IndividualParam::FullStomach, value);
+    }
+
+    float GetLocalPlayerMaxFullStomach()
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return -1.0f;
+        return Scanner::ReadMemory<float>(param + Offsets::IndividualParam::MaxFullStomach);
+    }
+
+    // ───── ShieldHP ─────
+    int64_t GetLocalPlayerShieldHP()
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return -1;
+        return Scanner::ReadMemory<int64_t>(param + Offsets::IndividualParam::ShieldHP);
+    }
+
+    bool SetLocalPlayerShieldHP(int64_t value)
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return false;
+        return WriteAt<int64_t>(param + Offsets::IndividualParam::ShieldHP, value);
+    }
+
+    int64_t GetLocalPlayerShieldMaxHP()
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return -1;
+        return Scanner::ReadMemory<int64_t>(param + Offsets::IndividualParam::ShieldMaxHP);
+    }
+
+    // ───── UnusedStatusPoint (uint16) ─────
+    int GetLocalPlayerUnusedStatusPoint()
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return -1;
+        return (int)Scanner::ReadMemory<uint16_t>(param + Offsets::IndividualParam::UnusedStatusPoint);
+    }
+
+    bool SetLocalPlayerUnusedStatusPoint(uint16_t value)
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return false;
+        return WriteAt<uint16_t>(param + Offsets::IndividualParam::UnusedStatusPoint, value);
+    }
+
+    // ───── TechnologyPoint ─────
+    int GetLocalTechnologyPoint()
+    {
+        uintptr_t tech = GetLocalTechnologyData();
+        if (!tech) return -1;
+        return Scanner::ReadMemory<int32_t>(tech + Offsets::TechnologyData::TechnologyPoint);
+    }
+
+    bool SetLocalTechnologyPoint(int value)
+    {
+        uintptr_t tech = GetLocalTechnologyData();
+        if (!tech) return false;
+        return WriteAt<int32_t>(tech + Offsets::TechnologyData::TechnologyPoint, value);
+    }
+
+    // ───── Inventory ─────
+    int GetItemSlotStackCount(int index)
+    {
+        uintptr_t slot = GetItemSlotAt(index);
+        if (!slot) return -1;
+        return Scanner::ReadMemory<int32_t>(slot + Offsets::ItemSlot::StackCount);
+    }
+
+    bool SetItemSlotStackCount(int index, int value)
+    {
+        uintptr_t slot = GetItemSlotAt(index);
+        if (!slot) return false;
+        return WriteAt<int32_t>(slot + Offsets::ItemSlot::StackCount, value);
+    }
+
+    // ───── CurrentTemperature ─────
+    // PlayerCharacter::BodyTemperatureComponent 오프셋이 0 이면 비활성으로 처리.
+    static uintptr_t GetBodyTemperatureComponent()
+    {
+        if (Offsets::PlayerCharacter::BodyTemperatureComponent == 0) return 0;
+        return Step(GetLocalPawn(), Offsets::PlayerCharacter::BodyTemperatureComponent);
+    }
+
+    int GetLocalPlayerCurrentTemperature()
+    {
+        uintptr_t comp = GetBodyTemperatureComponent();
+        if (!comp) return -1;
+        return Scanner::ReadMemory<int32_t>(comp + Offsets::BodyTemperatureComp::CurrentTemperature);
+    }
+
+    bool SetLocalPlayerCurrentTemperature(int value)
+    {
+        uintptr_t comp = GetBodyTemperatureComponent();
+        if (!comp) return false;
+        return WriteAt<int32_t>(comp + Offsets::BodyTemperatureComp::CurrentTemperature, value);
     }
 }

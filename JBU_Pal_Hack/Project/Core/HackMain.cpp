@@ -6,6 +6,10 @@
 #include "../Memory/HookManager.h"
 #include "../Memory/CursorHooks.h"
 #include "../Cheats/MemoryCheats/GodMode.h"
+#include "../Cheats/MemoryCheats/PlayerCheats.h"
+#include "../Cheats/MemoryCheats/TechCheats.h"
+#include "../Cheats/MemoryCheats/InventoryCheats.h"
+#include "../Cheats/MemoryCheats/TempControl.h"
 #include "../Cheats/HookCheats/ExampleHook.h"
 
 namespace HackMain
@@ -74,6 +78,10 @@ namespace HackMain
             // 매 프레임 활성화된 메모리 치트들을 적용 (Track 1: MemoryCheats).
             // 새 메모리 치트는 여기에 한 줄씩 추가.
             GodMode::Tick();
+            PlayerCheats::Tick();
+            TechCheats::Tick();
+            InventoryCheats::Tick();
+            TempControl::Tick();
 
             Sleep(10); // Prevent CPU maxout
         }

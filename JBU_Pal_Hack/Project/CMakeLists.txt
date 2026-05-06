@@ -17,6 +17,10 @@ add_library(${PROJECT_NAME} SHARED
     SDK/Pal.cpp
     # Track 1: 오프셋 기반 메모리 치트 (각 기능 = 1 파일)
     Cheats/MemoryCheats/GodMode.cpp
+    Cheats/MemoryCheats/PlayerCheats.cpp
+    Cheats/MemoryCheats/TechCheats.cpp
+    Cheats/MemoryCheats/InventoryCheats.cpp
+    Cheats/MemoryCheats/TempControl.cpp
     # Track 2: AOB + 함수 후킹 치트 (각 기능 = 1 파일)
     Cheats/HookCheats/ExampleHook.cpp
 )

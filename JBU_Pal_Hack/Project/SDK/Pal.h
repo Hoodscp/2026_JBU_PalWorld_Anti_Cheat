@@ -13,11 +13,44 @@ namespace SDK
     uintptr_t GetLocalPawn();
     uintptr_t GetCharacterParameterComponent();
     uintptr_t GetIndividualParameter();
+    uintptr_t GetLocalTechnologyData();
+    uintptr_t GetLocalItemContainer();
+    uintptr_t GetItemSlotAt(int index);
 
-    // ───── 고수준 게임 데이터 접근 ─────
-    // 로컬 플레이어의 현재 HP 값을 읽어옵니다. (실패 시 -1)
+    // ───── HP ─────
     int64_t GetLocalPlayerHealth();
+    bool    SetLocalPlayerHealth(int64_t hpVal);
+    int64_t GetLocalPlayerMaxHP();
 
-    // 로컬 플레이어의 HP를 일정 값으로 덮어씁니다.
-    bool SetLocalPlayerHealth(int64_t hpVal);
+    // ───── Stamina (SP, FFixedPoint64) ─────
+    int64_t GetLocalPlayerStamina();
+    bool    SetLocalPlayerStamina(int64_t spVal);
+
+    // ───── FullStomach (포만감, float) ─────
+    float GetLocalPlayerFullStomach();
+    bool  SetLocalPlayerFullStomach(float value);
+    float GetLocalPlayerMaxFullStomach();
+
+    // ───── ShieldHP (FFixedPoint64) ─────
+    int64_t GetLocalPlayerShieldHP();
+    bool    SetLocalPlayerShieldHP(int64_t value);
+    int64_t GetLocalPlayerShieldMaxHP();
+
+    // ───── UnusedStatusPoint (uint16) ─────
+    int     GetLocalPlayerUnusedStatusPoint();
+    bool    SetLocalPlayerUnusedStatusPoint(uint16_t value);
+
+    // ───── TechnologyPoint (int32, on UPalTechnologyData) ─────
+    int  GetLocalTechnologyPoint();
+    bool SetLocalTechnologyPoint(int value);
+
+    // ───── Inventory ItemSlot[index] ─────
+    // 첫 슬롯의 StackCount 를 읽거나 덮어씁니다. 실패 시 -1 / false.
+    int  GetItemSlotStackCount(int index);
+    bool SetItemSlotStackCount(int index, int value);
+
+    // ───── CurrentTemperature (int32, on UPalBodyTemperatureComponent) ─────
+    // BodyTemperatureComponent 오프셋이 0(미해결)이면 -1 반환.
+    int  GetLocalPlayerCurrentTemperature();
+    bool SetLocalPlayerCurrentTemperature(int value);
 }
