@@ -31,6 +31,15 @@ namespace Menu
         else         ImGui::TextDisabled("Current TechPoint: <unavailable>");
     }
 
+    static void DrawEnvironmentSection()
+    {
+        ImGui::SeparatorText("Environment");
+        ImGui::Checkbox("Always Normal Temperature", &Config.bForceNormalTemp);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "온도 상태 변경 명령(0x138 멤버 write)을 가로채 새 값을 0(Normal)으로 강제합니다.\n"
+            "지역 진입/장비 변경 등으로 온도 단계가 바뀌려 할 때만 동작 → 매우 가벼움.");
+    }
+
     static void DrawInventorySection()
     {
         ImGui::SeparatorText("Inventory");
@@ -85,6 +94,7 @@ namespace Menu
 
         DrawPlayerSection();
         DrawTechSection();
+        DrawEnvironmentSection();
         DrawInventorySection();
         DrawStatusSection();
 

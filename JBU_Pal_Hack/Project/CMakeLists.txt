@@ -22,6 +22,7 @@ add_library(${PROJECT_NAME} SHARED
     Cheats/MemoryCheats/InventoryCheats.cpp
     # Track 2: AOB + 함수 후킹 치트 (각 기능 = 1 파일)
     Cheats/HookCheats/ExampleHook.cpp
+    Cheats/HookCheats/TemperatureHook.cpp
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)

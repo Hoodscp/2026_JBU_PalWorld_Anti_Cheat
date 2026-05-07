@@ -21,6 +21,9 @@ namespace Menu
         // ── 신규: 자원/연구 ──
         bool bFreeTechPoint   = false; // TechnologyPoint = 9999
 
+        // ── 신규: 환경 (Track 2 mid-function patch) ──
+        bool bForceNormalTemp = false; // 온도 상태 변경 명령에서 새 값 → 0(Normal) 강제
+
         // ── 신규: 인벤토리 ──
         bool bForceItemStack       = false;
         int  SelectedContainerIdx  = 0;

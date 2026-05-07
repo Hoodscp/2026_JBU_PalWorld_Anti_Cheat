@@ -20,6 +20,16 @@ namespace SDK::Signatures
 {
     inline constexpr const char* TakeDamage = "";
 
+    // Always-Normal-Temperature mid-function patch.
+    // 출처: Reference/CT Files/Palworld-Win64-Shipping.CT (symbol: temperature)
+    // 매치 위치: Palworld-Win64-Shipping.exe.text+299D501 (게임 패치마다 변동)
+    // 매치되는 14바이트:
+    //   48 8B 9C 24 B0 00 00 00   mov rbx,[rsp+0xB0]
+    //   39 87 38 01 00 00          cmp [rdi+0x138],eax
+    // 사용처: Cheats/HookCheats/TemperatureHook.cpp (함수가 아닌 명령어 시퀀스를 후킹)
+    inline constexpr const char* Temperature =
+        "48 8B 9C 24 B0 00 00 00 39 87 38 01 00 00";
+
     // TODO(Team C): 분석 후 추가
     //   inline constexpr const char* ConsumeAmmo       = "...";
     //   inline constexpr const char* StaminaDecrement  = "...";
