@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(Get-ChildItem \"C:\\\\Users\\\\11211\\\\Documents\\\\GitHub\\\\2026_JBU_Pal_Anti_Cheat\\\\JBU_Pal_Hack\\\\Reference\\\\CT_Files\\\\Palworld-Win64-Shipping.CT\" -ErrorAction Stop)",
-      "Bash(Select-Object FullName, Length, LastWriteTime)"
+      "Bash(Select-Object FullName, Length, LastWriteTime)",
+      "Bash(command -v cmake)",
+      "Bash(cmake --version)",
+      "PowerShell(Get-Command *)",
+      "Bash(git *)"
     ]
   }
 }

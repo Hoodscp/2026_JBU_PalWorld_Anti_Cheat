@@ -26,9 +26,82 @@ namespace Menu
         ImGui::Checkbox("Free Technology Points", &Config.bFreeTechPoint);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("TechnologyPoint 를 9999 로 유지");
 
-        int tp = SDK::GetLocalTechnologyPoint();
-        if (tp >= 0) ImGui::Text("Current TechPoint: %d", tp);
-        else         ImGui::TextDisabled("Current TechPoint: <unavailable>");
+        ImGui::Checkbox("Free Boss Technology Points", &Config.bFreeBossTechPoint);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("BossTechnologyPoint(0x154) 를 9999 로 유지");
+
+        int tp  = SDK::GetLocalTechnologyPoint();
+        int btp = SDK::GetLocalBossTechnologyPoint();
+        if (tp >= 0)  ImGui::Text("Current TechPoint     : %d", tp);
+        else          ImGui::TextDisabled("Current TechPoint     : <unavailable>");
+        if (btp >= 0) ImGui::Text("Current BossTechPoint : %d", btp);
+        else          ImGui::TextDisabled("Current BossTechPoint : <unavailable>");
+    }
+
+    static void DrawStatBoostSection()
+    {
+        ImGui::SeparatorText("Stat Boost");
+
+        ImGui::Checkbox("Max Sanity (=100)", &Config.bMaxSanity);
+        ImGui::Checkbox("Infinite MP",       &Config.bInfiniteMP);
+        ImGui::Checkbox("Max Talents (IV)",  &Config.bMaxTalents);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "Talent_HP/Melee/Shot/Defense 를 100 으로 고정합니다.\n"
+            "본인 캐릭터 슬롯의 SaveParameter 에 적용 → 데미지/HP 계수 상승.");
+
+        ImGui::Checkbox("Force Level", &Config.bForceLevel);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(120);
+        ImGui::InputInt("##LevelVal", &Config.TargetLevel);
+        if (Config.TargetLevel < 1)   Config.TargetLevel = 1;
+        if (Config.TargetLevel > 255) Config.TargetLevel = 255;
+
+        ImGui::Checkbox("Force Exp", &Config.bForceExp);
+        ImGui::SameLine();
+        // ImGui 는 int64 InputScalar 가 별도 함수. int 64 InputScalar 로 표시.
+        ImGui::SetNextItemWidth(160);
+        ImGui::InputScalar("##ExpVal", ImGuiDataType_S64, &Config.TargetExp);
+        if (Config.TargetExp < 0) Config.TargetExp = 0;
+
+        // 실시간 상태 표시
+        int  lv  = SDK::GetLocalPlayerLevel();
+        long long ex = SDK::GetLocalPlayerExp();
+        float san = SDK::GetLocalPlayerSanity();
+        long long mp  = SDK::GetLocalPlayerMP();
+        long long mxmp= SDK::GetLocalPlayerMaxMP();
+        int  thp = SDK::GetLocalPlayerTalentHP();
+        int  tm  = SDK::GetLocalPlayerTalentMelee();
+        int  ts  = SDK::GetLocalPlayerTalentShot();
+        int  td  = SDK::GetLocalPlayerTalentDefense();
+
+        if (lv  >= 0) ImGui::Text("Level   : %d", lv);
+        if (ex  >= 0) ImGui::Text("Exp     : %lld", ex);
+        if (san >= 0) ImGui::Text("Sanity  : %.1f", san);
+        if (mp  >= 0) ImGui::Text("MP      : %lld / %lld", mp, mxmp);
+        if (thp >= 0) ImGui::Text("Talents : HP %d / Mel %d / Shot %d / Def %d", thp, tm, ts, td);
+    }
+
+    static void DrawSocialSection()
+    {
+        ImGui::SeparatorText("Social / Arena");
+
+        ImGui::Checkbox("Force Friendship", &Config.bForceFriendship);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(120);
+        ImGui::InputInt("##FpVal", &Config.TargetFriendship);
+        if (Config.TargetFriendship < 0) Config.TargetFriendship = 0;
+
+        ImGui::Checkbox("Force Arena RP", &Config.bForceArenaRP);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(120);
+        ImGui::InputInt("##ArpVal", &Config.TargetArenaRP);
+        if (Config.TargetArenaRP < 0) Config.TargetArenaRP = 0;
+
+        int fp  = SDK::GetLocalPlayerFriendshipPoint();
+        int arp = SDK::GetLocalPlayerArenaRankPoint();
+        if (fp  >= 0) ImGui::Text("Friendship    : %d", fp);
+        else          ImGui::TextDisabled("Friendship    : <unavailable>");
+        if (arp >= 0) ImGui::Text("Arena RankPt  : %d", arp);
+        else          ImGui::TextDisabled("Arena RankPt  : <unavailable>");
     }
 
     static void DrawEnvironmentSection()
@@ -93,7 +166,9 @@ namespace Menu
         ImGui::Text("Press 'INSERT' to toggle this menu.");
 
         DrawPlayerSection();
+        DrawStatBoostSection();
         DrawTechSection();
+        DrawSocialSection();
         DrawEnvironmentSection();
         DrawInventorySection();
         DrawStatusSection();

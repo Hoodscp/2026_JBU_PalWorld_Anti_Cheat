@@ -9,6 +9,8 @@
 #include "../Cheats/MemoryCheats/PlayerCheats.h"
 #include "../Cheats/MemoryCheats/TechCheats.h"
 #include "../Cheats/MemoryCheats/InventoryCheats.h"
+#include "../Cheats/MemoryCheats/StatBoost.h"
+#include "../Cheats/MemoryCheats/SocialCheats.h"
 #include "../Cheats/HookCheats/ExampleHook.h"
 #include "../Cheats/HookCheats/TemperatureHook.h"
 
@@ -85,6 +87,8 @@ namespace HackMain
             PlayerCheats::Tick();
             TechCheats::Tick();
             InventoryCheats::Tick();
+            StatBoost::Tick();
+            SocialCheats::Tick();
 
             // Track 2 후킹 중 매 프레임 toggle 동기화가 필요한 것만 호출.
             TemperatureHook::Tick();

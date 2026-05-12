@@ -20,6 +20,8 @@ add_library(${PROJECT_NAME} SHARED
     Cheats/MemoryCheats/PlayerCheats.cpp
     Cheats/MemoryCheats/TechCheats.cpp
     Cheats/MemoryCheats/InventoryCheats.cpp
+    Cheats/MemoryCheats/StatBoost.cpp
+    Cheats/MemoryCheats/SocialCheats.cpp
     # Track 2: AOB + 함수 후킹 치트 (각 기능 = 1 파일)
     Cheats/HookCheats/ExampleHook.cpp
     Cheats/HookCheats/TemperatureHook.cpp

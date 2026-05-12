@@ -197,6 +197,142 @@ namespace SDK
         return WriteAt<uint16_t>(param + Offsets::IndividualParam::UnusedStatusPoint, value);
     }
 
+    // ───── Level / Exp ─────
+    int GetLocalPlayerLevel()
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return -1;
+        return (int)Scanner::ReadMemory<uint8_t>(param + Offsets::IndividualParam::Level);
+    }
+
+    bool SetLocalPlayerLevel(uint8_t value)
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return false;
+        return WriteAt<uint8_t>(param + Offsets::IndividualParam::Level, value);
+    }
+
+    int64_t GetLocalPlayerExp()
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return -1;
+        return Scanner::ReadMemory<int64_t>(param + Offsets::IndividualParam::Exp);
+    }
+
+    bool SetLocalPlayerExp(int64_t value)
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return false;
+        return WriteAt<int64_t>(param + Offsets::IndividualParam::Exp, value);
+    }
+
+    // ───── Talents ─────
+    int GetLocalPlayerTalentHP()
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return -1;
+        return (int)Scanner::ReadMemory<uint8_t>(param + Offsets::IndividualParam::Talent_HP);
+    }
+
+    int GetLocalPlayerTalentMelee()
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return -1;
+        return (int)Scanner::ReadMemory<uint8_t>(param + Offsets::IndividualParam::Talent_Melee);
+    }
+
+    int GetLocalPlayerTalentShot()
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return -1;
+        return (int)Scanner::ReadMemory<uint8_t>(param + Offsets::IndividualParam::Talent_Shot);
+    }
+
+    int GetLocalPlayerTalentDefense()
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return -1;
+        return (int)Scanner::ReadMemory<uint8_t>(param + Offsets::IndividualParam::Talent_Defense);
+    }
+
+    bool SetLocalPlayerTalents(uint8_t hp, uint8_t melee, uint8_t shot, uint8_t def)
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return false;
+        bool ok = true;
+        ok &= WriteAt<uint8_t>(param + Offsets::IndividualParam::Talent_HP,      hp);
+        ok &= WriteAt<uint8_t>(param + Offsets::IndividualParam::Talent_Melee,   melee);
+        ok &= WriteAt<uint8_t>(param + Offsets::IndividualParam::Talent_Shot,    shot);
+        ok &= WriteAt<uint8_t>(param + Offsets::IndividualParam::Talent_Defense, def);
+        return ok;
+    }
+
+    // ───── MP ─────
+    int64_t GetLocalPlayerMP()
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return -1;
+        return Scanner::ReadMemory<int64_t>(param + Offsets::IndividualParam::MP);
+    }
+
+    bool SetLocalPlayerMP(int64_t value)
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return false;
+        return WriteAt<int64_t>(param + Offsets::IndividualParam::MP, value);
+    }
+
+    int64_t GetLocalPlayerMaxMP()
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return -1;
+        return Scanner::ReadMemory<int64_t>(param + Offsets::IndividualParam::MaxMP);
+    }
+
+    // ───── Sanity ─────
+    float GetLocalPlayerSanity()
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return -1.0f;
+        return Scanner::ReadMemory<float>(param + Offsets::IndividualParam::SanityValue);
+    }
+
+    bool SetLocalPlayerSanity(float value)
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return false;
+        return WriteAt<float>(param + Offsets::IndividualParam::SanityValue, value);
+    }
+
+    // ───── Friendship / Arena RP ─────
+    int GetLocalPlayerFriendshipPoint()
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return -1;
+        return Scanner::ReadMemory<int32_t>(param + Offsets::IndividualParam::FriendshipPoint);
+    }
+
+    bool SetLocalPlayerFriendshipPoint(int value)
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return false;
+        return WriteAt<int32_t>(param + Offsets::IndividualParam::FriendshipPoint, value);
+    }
+
+    int GetLocalPlayerArenaRankPoint()
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return -1;
+        return Scanner::ReadMemory<int32_t>(param + Offsets::IndividualParam::ArenaRankPoint);
+    }
+
+    bool SetLocalPlayerArenaRankPoint(int value)
+    {
+        uintptr_t param = GetIndividualParameter();
+        if (!param) return false;
+        return WriteAt<int32_t>(param + Offsets::IndividualParam::ArenaRankPoint, value);
+    }
+
     // ───── TechnologyPoint ─────
     int GetLocalTechnologyPoint()
     {
@@ -210,6 +346,21 @@ namespace SDK
         uintptr_t tech = GetLocalTechnologyData();
         if (!tech) return false;
         return WriteAt<int32_t>(tech + Offsets::TechnologyData::TechnologyPoint, value);
+    }
+
+    // ───── BossTechnologyPoint ─────
+    int GetLocalBossTechnologyPoint()
+    {
+        uintptr_t tech = GetLocalTechnologyData();
+        if (!tech) return -1;
+        return Scanner::ReadMemory<int32_t>(tech + Offsets::TechnologyData::BossTechnologyPoint);
+    }
+
+    bool SetLocalBossTechnologyPoint(int value)
+    {
+        uintptr_t tech = GetLocalTechnologyData();
+        if (!tech) return false;
+        return WriteAt<int32_t>(tech + Offsets::TechnologyData::BossTechnologyPoint, value);
     }
 
     // ───── Inventory ─────

@@ -42,9 +42,41 @@ namespace SDK
     int     GetLocalPlayerUnusedStatusPoint();
     bool    SetLocalPlayerUnusedStatusPoint(uint16_t value);
 
+    // ───── Level / Exp ─────
+    int     GetLocalPlayerLevel();
+    bool    SetLocalPlayerLevel(uint8_t value);
+    int64_t GetLocalPlayerExp();
+    bool    SetLocalPlayerExp(int64_t value);
+
+    // ───── Talents (Pal IV — 본인 캐릭터 슬롯에만 적용, 0~100) ─────
+    int  GetLocalPlayerTalentHP();
+    int  GetLocalPlayerTalentMelee();
+    int  GetLocalPlayerTalentShot();
+    int  GetLocalPlayerTalentDefense();
+    bool SetLocalPlayerTalents(uint8_t hp, uint8_t melee, uint8_t shot, uint8_t def);
+
+    // ───── MP (FFixedPoint64) ─────
+    int64_t GetLocalPlayerMP();
+    bool    SetLocalPlayerMP(int64_t value);
+    int64_t GetLocalPlayerMaxMP();
+
+    // ───── Sanity (float, 0~100) ─────
+    float GetLocalPlayerSanity();
+    bool  SetLocalPlayerSanity(float value);
+
+    // ───── Friendship / Arena RP (int32) ─────
+    int  GetLocalPlayerFriendshipPoint();
+    bool SetLocalPlayerFriendshipPoint(int value);
+    int  GetLocalPlayerArenaRankPoint();
+    bool SetLocalPlayerArenaRankPoint(int value);
+
     // ───── TechnologyPoint (int32, on UPalTechnologyData) ─────
     int  GetLocalTechnologyPoint();
     bool SetLocalTechnologyPoint(int value);
+
+    // ───── BossTechnologyPoint (int32, on UPalTechnologyData) ─────
+    int  GetLocalBossTechnologyPoint();
+    bool SetLocalBossTechnologyPoint(int value);
 
     // ───── Inventory ItemSlot[containerIndex][slotIndex] ─────
     // 체인: PlayerState → InventoryData → MultiHelper → Containers[containerIndex]

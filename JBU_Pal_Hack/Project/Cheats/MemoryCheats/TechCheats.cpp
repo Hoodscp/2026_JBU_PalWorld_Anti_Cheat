@@ -4,12 +4,18 @@
 
 namespace TechCheats
 {
-    static constexpr int kForcedTechPoint = 9999;
+    static constexpr int kForcedTechPoint     = 9999;
+    static constexpr int kForcedBossTechPoint = 9999;
 
     void Tick()
     {
-        if (Menu::Config.bFreeTechPoint) {
+        const auto& cfg = Menu::Config;
+
+        if (cfg.bFreeTechPoint) {
             SDK::SetLocalTechnologyPoint(kForcedTechPoint);
+        }
+        if (cfg.bFreeBossTechPoint) {
+            SDK::SetLocalBossTechnologyPoint(kForcedBossTechPoint);
         }
     }
 }

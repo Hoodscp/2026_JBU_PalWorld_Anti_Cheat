@@ -57,13 +57,25 @@ namespace SDK::Offsets
     // SaveParameter 임베드 베이스 = 0x388
     namespace IndividualParam {
         // 모두 SaveParameter(0x388) + 멤버 오프셋 으로 계산된 절대 오프셋.
-        constexpr uintptr_t HP                = 0x400; // FFixedPoint64
-        constexpr uintptr_t MaxHP             = 0x468; // FFixedPoint64
-        constexpr uintptr_t FullStomach       = 0x40C; // float
-        constexpr uintptr_t MaxFullStomach    = 0x4F4; // float
-        constexpr uintptr_t ShieldHP          = 0x488; // FFixedPoint64
-        constexpr uintptr_t ShieldMaxHP       = 0x490; // FFixedPoint64
-        constexpr uintptr_t UnusedStatusPoint = 0x4FC; // uint16
+        // (SaveParameter 멤버 오프셋은 FPalIndividualCharacterSaveParameter 덤프 기준)
+        constexpr uintptr_t Level             = 0x3A8; // uint8   (SaveParam +0x020)
+        constexpr uintptr_t Exp               = 0x3B0; // int64   (SaveParam +0x028)
+        constexpr uintptr_t HP                = 0x400; // FFixedPoint64       (+0x078)
+        constexpr uintptr_t Talent_HP         = 0x408; // uint8   (SaveParam +0x080)
+        constexpr uintptr_t Talent_Melee      = 0x409; // uint8   (SaveParam +0x081)
+        constexpr uintptr_t Talent_Shot       = 0x40A; // uint8   (SaveParam +0x082)
+        constexpr uintptr_t Talent_Defense    = 0x40B; // uint8   (SaveParam +0x083)
+        constexpr uintptr_t FullStomach       = 0x40C; // float               (+0x084)
+        constexpr uintptr_t MP                = 0x430; // FFixedPoint64       (+0x0A8)
+        constexpr uintptr_t MaxHP             = 0x468; // FFixedPoint64       (+0x0E0)
+        constexpr uintptr_t ShieldHP          = 0x488; // FFixedPoint64       (+0x100)
+        constexpr uintptr_t ShieldMaxHP       = 0x490; // FFixedPoint64       (+0x108)
+        constexpr uintptr_t MaxMP             = 0x4A0; // FFixedPoint64       (+0x118)
+        constexpr uintptr_t SanityValue       = 0x4B4; // float               (+0x12C)
+        constexpr uintptr_t MaxFullStomach    = 0x4F4; // float               (+0x16C)
+        constexpr uintptr_t UnusedStatusPoint = 0x4FC; // uint16              (+0x174)
+        constexpr uintptr_t FriendshipPoint   = 0x65C; // int32   (SaveParam +0x2D4)
+        constexpr uintptr_t ArenaRankPoint    = 0x670; // int32   (SaveParam +0x2E8)
     }
 
     namespace TechnologyData {
