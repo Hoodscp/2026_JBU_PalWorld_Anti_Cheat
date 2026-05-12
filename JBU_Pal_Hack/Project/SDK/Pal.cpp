@@ -377,4 +377,163 @@ namespace SDK
         if (!slot) return false;
         return WriteAt<int32_t>(slot + Offsets::ItemSlot::StackCount, value);
     }
+
+    // ───── 보유 팰 ─────
+    uintptr_t GetLocalPalStorage()
+    {
+        return Step(GetLocalPlayerState(), Offsets::PlayerState::PalStorage);
+    }
+
+    uintptr_t GetLocalPalContainer()
+    {
+        return Step(GetLocalPalStorage(), Offsets::PalStorage::TargetContainer);
+    }
+
+    int GetPalSlotCount()
+    {
+        uintptr_t container = GetLocalPalContainer();
+        if (!container) return 0;
+        return (int)Scanner::ReadMemory<int32_t>(container + Offsets::PalCharContainer::SlotArray_Num);
+    }
+
+    uintptr_t GetPalSlotAt(int slotIndex)
+    {
+        if (slotIndex < 0) return 0;
+        uintptr_t container = GetLocalPalContainer();
+        if (!container) return 0;
+        int32_t num = Scanner::ReadMemory<int32_t>(container + Offsets::PalCharContainer::SlotArray_Num);
+        if (slotIndex >= num) return 0;
+        uintptr_t arrData = Scanner::ReadMemory<uintptr_t>(container + Offsets::PalCharContainer::SlotArray_Data);
+        if (!arrData) return 0;
+        return Scanner::ReadMemory<uintptr_t>(arrData + (uintptr_t)slotIndex * sizeof(uintptr_t));
+    }
+
+    uintptr_t GetPalIndividualParameterAt(int slotIndex)
+    {
+        uintptr_t slot = GetPalSlotAt(slotIndex);
+        if (!slot) return 0;
+        return Scanner::ReadMemory<uintptr_t>(slot + Offsets::PalCharSlot::ReplicateIndividualParameter);
+    }
+
+    bool IsPalSlotEmpty(int slotIndex)
+    {
+        return GetPalIndividualParameterAt(slotIndex) == 0;
+    }
+
+    // ── per-Pal stat helpers ──
+    // 모두 ReplicateIndividualParameter(=IndividualParameter base) 위에 동일한
+    // SaveParameter 오프셋 테이블을 재사용. LocalPlayer 와 코드 구조 동일.
+    namespace {
+        inline uintptr_t PalParam(int slotIndex) {
+            return GetPalIndividualParameterAt(slotIndex);
+        }
+    }
+
+    int GetPalLevel(int slotIndex)
+    {
+        uintptr_t p = PalParam(slotIndex);
+        if (!p) return -1;
+        return (int)Scanner::ReadMemory<uint8_t>(p + Offsets::IndividualParam::Level);
+    }
+    bool SetPalLevel(int slotIndex, uint8_t value)
+    {
+        uintptr_t p = PalParam(slotIndex);
+        if (!p) return false;
+        return WriteAt<uint8_t>(p + Offsets::IndividualParam::Level, value);
+    }
+
+    int64_t GetPalExp(int slotIndex)
+    {
+        uintptr_t p = PalParam(slotIndex);
+        if (!p) return -1;
+        return Scanner::ReadMemory<int64_t>(p + Offsets::IndividualParam::Exp);
+    }
+    bool SetPalExp(int slotIndex, int64_t value)
+    {
+        uintptr_t p = PalParam(slotIndex);
+        if (!p) return false;
+        return WriteAt<int64_t>(p + Offsets::IndividualParam::Exp, value);
+    }
+
+    int64_t GetPalHP(int slotIndex)
+    {
+        uintptr_t p = PalParam(slotIndex);
+        if (!p) return -1;
+        return Scanner::ReadMemory<int64_t>(p + Offsets::IndividualParam::HP);
+    }
+    bool SetPalHP(int slotIndex, int64_t value)
+    {
+        uintptr_t p = PalParam(slotIndex);
+        if (!p) return false;
+        return WriteAt<int64_t>(p + Offsets::IndividualParam::HP, value);
+    }
+
+    int64_t GetPalMaxHP(int slotIndex)
+    {
+        uintptr_t p = PalParam(slotIndex);
+        if (!p) return -1;
+        return Scanner::ReadMemory<int64_t>(p + Offsets::IndividualParam::MaxHP);
+    }
+
+    int GetPalTalentHP(int slotIndex)
+    {
+        uintptr_t p = PalParam(slotIndex);
+        if (!p) return -1;
+        return (int)Scanner::ReadMemory<uint8_t>(p + Offsets::IndividualParam::Talent_HP);
+    }
+    int GetPalTalentMelee(int slotIndex)
+    {
+        uintptr_t p = PalParam(slotIndex);
+        if (!p) return -1;
+        return (int)Scanner::ReadMemory<uint8_t>(p + Offsets::IndividualParam::Talent_Melee);
+    }
+    int GetPalTalentShot(int slotIndex)
+    {
+        uintptr_t p = PalParam(slotIndex);
+        if (!p) return -1;
+        return (int)Scanner::ReadMemory<uint8_t>(p + Offsets::IndividualParam::Talent_Shot);
+    }
+    int GetPalTalentDefense(int slotIndex)
+    {
+        uintptr_t p = PalParam(slotIndex);
+        if (!p) return -1;
+        return (int)Scanner::ReadMemory<uint8_t>(p + Offsets::IndividualParam::Talent_Defense);
+    }
+    bool SetPalTalents(int slotIndex, uint8_t hp, uint8_t melee, uint8_t shot, uint8_t def)
+    {
+        uintptr_t p = PalParam(slotIndex);
+        if (!p) return false;
+        bool ok = true;
+        ok &= WriteAt<uint8_t>(p + Offsets::IndividualParam::Talent_HP,      hp);
+        ok &= WriteAt<uint8_t>(p + Offsets::IndividualParam::Talent_Melee,   melee);
+        ok &= WriteAt<uint8_t>(p + Offsets::IndividualParam::Talent_Shot,    shot);
+        ok &= WriteAt<uint8_t>(p + Offsets::IndividualParam::Talent_Defense, def);
+        return ok;
+    }
+
+    float GetPalSanity(int slotIndex)
+    {
+        uintptr_t p = PalParam(slotIndex);
+        if (!p) return -1.0f;
+        return Scanner::ReadMemory<float>(p + Offsets::IndividualParam::SanityValue);
+    }
+    bool SetPalSanity(int slotIndex, float value)
+    {
+        uintptr_t p = PalParam(slotIndex);
+        if (!p) return false;
+        return WriteAt<float>(p + Offsets::IndividualParam::SanityValue, value);
+    }
+
+    int64_t GetPalMP(int slotIndex)
+    {
+        uintptr_t p = PalParam(slotIndex);
+        if (!p) return -1;
+        return Scanner::ReadMemory<int64_t>(p + Offsets::IndividualParam::MP);
+    }
+    bool SetPalMP(int slotIndex, int64_t value)
+    {
+        uintptr_t p = PalParam(slotIndex);
+        if (!p) return false;
+        return WriteAt<int64_t>(p + Offsets::IndividualParam::MP, value);
+    }
 }

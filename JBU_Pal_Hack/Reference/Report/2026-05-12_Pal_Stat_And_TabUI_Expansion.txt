@@ -1,0 +1,311 @@
+═══════════════════════════════════════════════════════════════════════════════
+ JBU Palworld Internal Cheat — 단순 메모리 변조 8종 + 보유 팰 변조 + 탭 UI 확장
+ 작성일: 2026-05-12
+ 작업 브랜치: Dev-Hack-Jihoon
+ 작성자: Jihoon (with Claude Opus 4.7)
+═══════════════════════════════════════════════════════════════════════════════
+
+
+[1] 작업 목표
+───────────────────────────────────────────────────────────────────────────────
+2026-05-06 리포트의 후속 작업으로, 다음 세 가지를 진행한다.
+
+  (A) Reference/CT_Files/Palworld-Win64-Shipping.CT 파일을 분석해
+      "단순 메모리 변조" 와 "AOB 패턴 + 코드 인젝션" 두 카테고리로
+      정리한 보고서(.md) 를 작성.
+
+  (B) FPalIndividualCharacterSaveParameter / UPalTechnologyData 덤프에서
+      아직 노출되지 않은 멤버들을 활용해 단순 메모리 변조 치트 8 종을
+      Track 1 (메모리 치트) 구조에 추가:
+        - Boss Technology Point
+        - Max Sanity / Infinite MP / Max Talents (IV)
+        - Force Level / Force Exp
+        - Force Friendship / Force Arena RP
+
+  (C) 보유 팰(Pal Storage) 데이터에 read/write 파이프라인을 추가해
+      슬롯별 Level / Exp / HP / MP / Sanity / Talents 변조 가능하도록 함.
+
+  (D) ImGui 메뉴가 세로로 너무 길어진 문제를 해결하기 위해
+      Section 단위 → ImGui::BeginTabBar 기반 탭 UI 로 재구성.
+
+
+[2] SDK 구조 분석 결과
+───────────────────────────────────────────────────────────────────────────────
+
+[2-1] FPalIndividualCharacterSaveParameter 추가 멤버 매핑
+      (베이스 = UPalIndividualCharacterParameter +0x388)
+
+  FPalIndividualCharacterSaveParameter
+    +0x020  uint8         Level              → 절대 0x3A8
+    +0x028  int64         Exp                → 절대 0x3B0
+    +0x080  uint8         Talent_HP          → 절대 0x408
+    +0x081  uint8         Talent_Melee       → 절대 0x409
+    +0x082  uint8         Talent_Shot        → 절대 0x40A
+    +0x083  uint8         Talent_Defense    → 절대 0x40B
+    +0x0A8  FFixedPoint64 MP                 → 절대 0x430
+    +0x118  FFixedPoint64 MaxMP              → 절대 0x4A0
+    +0x12C  float         SanityValue        → 절대 0x4B4
+    +0x2D4  int32         FriendshipPoint    → 절대 0x65C
+    +0x2E8  int32         ArenaRankPoint    → 절대 0x670
+
+  → 위 오프셋들은 LocalPlayer 본인 캐릭터 슬롯과 보유 팰 슬롯에
+    동일하게 적용된다. PlayerState 체인 / PalStorage 체인 어느 쪽으로
+    접근하든 최종 IndividualParameter 베이스 위에 같은 오프셋 테이블
+    이 그대로 재사용된다.
+
+
+[2-2] UPalTechnologyData 미사용 멤버 활용
+
+  UPalTechnologyData
+    +0x150  int32 TechnologyPoint     (기존 사용)
+    +0x154  int32 BossTechnologyPoint (Offsets.h 에는 이미 정의돼 있었으나
+                                      getter/setter 가 미구현 → 본 작업에서
+                                      추가)
+
+
+[2-3] 보유 팰(Pal Storage) 접근 체인
+
+  APalPlayerState
+    +0x5E0  UPalPlayerDataPalStorage*  PalStorage
+
+  UPalPlayerDataPalStorage
+    +0x030  UPalIndividualCharacterContainer*  TargetContainer
+
+  UPalIndividualCharacterContainer  : UPalContainerBase
+    +0x080  TArray<UPalIndividualCharacterSlot*> SlotArray
+              { Data(+0x080), Num(+0x088), Max(+0x08C) }
+
+  UPalIndividualCharacterSlot
+    +0x060  UPalIndividualCharacterHandle*           Handle
+    +0x098  UPalIndividualCharacterParameter*        ReplicateIndividualParameter
+            ↑ 이 포인터가 곧 IndividualParameter base 가 되어
+              +0x388 (SaveParameter) 임베드 구조가 그대로 따라온다.
+
+
+[2-4] 최종 보유 팰 포인터 체인
+
+    GameState        (+0x158)
+      → PlayerArray  (+0x2A8)
+        → PlayerArray[0]  (+0x000)
+          → PalStorage              (+0x5E0)
+            → TargetContainer       (+0x030)
+              → SlotArray           (+0x080)
+                → SlotArray[i]      (+0x000)
+                  → ReplicateIndividualParameter (+0x098)
+                    → SaveParameter base = +0x388
+                      → 기존 IndividualParam:: 오프셋 그대로 재사용
+
+
+[2-5] CT 분석 보고서 결론 요약
+
+  Cheat Engine 테이블 Palworld-Win64-Shipping.CT 는
+    - 총 CheatEntry ≈ 340 개
+    - 단순 메모리 변조 ≈ 150+ (포인터 체인 + 오프셋만 사용)
+    - AOB + Auto Assembler 인젝션 ≈ 60+
+    - 구분자/세팅 ≈ 20+
+  단순 메모리 변조 항목 대부분이 getPlayerPtr / getFoodOnHover /
+  getItemsInventoryOpen / getCraftingItems 4 개의 베이스 후크에 의존.
+  본 작업 (B)/(C) 의 단순 변조 치트들은 안티치트 관점에서 동일한
+  "값 미러링 / 체크섬" 으로 막을 수 있는 부류로 분류된다.
+
+  세부는 별도 문서:
+    Reference/mdfiles/CT_Analysis_Palworld.md
+
+
+[3] 코드 변경 내역
+───────────────────────────────────────────────────────────────────────────────
+
+[3-1] Project/SDK/Offsets.h
+  - PlayerState::PalStorage (0x5E0) 추가
+  - IndividualParam 네임스페이스 확장:
+      Level (0x3A8), Exp (0x3B0)
+      Talent_HP (0x408) / Talent_Melee (0x409) / Talent_Shot (0x40A) /
+      Talent_Defense (0x40B)
+      MP (0x430), MaxMP (0x4A0)
+      SanityValue (0x4B4)
+      FriendshipPoint (0x65C), ArenaRankPoint (0x670)
+  - 보유 팰 체인용 네임스페이스 신규:
+      PalStorage::TargetContainer (0x30)
+      PalCharContainer::SlotArray_Data / SlotArray_Num (0x80 / 0x88)
+      PalCharSlot::Handle (0x60), PalCharSlot::ReplicateIndividualParameter
+                                  (0x98)
+  - 기존 BossTechnologyPoint (0x154) 는 그대로 유지
+
+[3-2] Project/SDK/Pal.h, Pal.cpp
+  - LocalPlayer 본체용 신규 데이터 API:
+      Get/SetLocalPlayerLevel
+      Get/SetLocalPlayerExp
+      Get/SetLocalPlayerSanity
+      Get/SetLocalPlayerMP, GetLocalPlayerMaxMP
+      Get/SetLocalPlayerTalents (HP/Melee/Shot/Defense 일괄 set)
+      Get/SetLocalPlayerFriendshipPoint
+      Get/SetLocalPlayerArenaRankPoint
+      Get/SetLocalBossTechnologyPoint
+  - 보유 팰용 신규 체인 헬퍼:
+      GetLocalPalStorage()
+      GetLocalPalContainer()
+      GetPalSlotCount()
+      GetPalSlotAt(slotIndex)
+      GetPalIndividualParameterAt(slotIndex)
+      IsPalSlotEmpty(slotIndex)
+  - 보유 팰 슬롯별 데이터 API (12 종):
+      Get/SetPalLevel
+      Get/SetPalExp
+      Get/SetPalHP, GetPalMaxHP
+      Get/SetPalSanity
+      Get/SetPalMP
+      Get/SetPalTalents (HP/Melee/Shot/Defense 일괄 set)
+  - 내부 공통 헬퍼:
+      anonymous PalParam(slotIndex) 으로 IndividualParameter base 캐싱
+      WriteAt<T>() / Step() 은 기존 그대로 재사용 (IsBadWritePtr /
+      IsBadReadPtr 가드 포함)
+
+[3-3] Project/Cheats/MemoryCheats/  (모듈 3 개 신규 + 1 개 확장)
+
+  StatBoost.{h,cpp}  ← 신규
+    Tick() 에서 Menu::Config 를 보고
+      bMaxSanity   → SetLocalPlayerSanity(100.0f)
+      bInfiniteMP  → SetLocalPlayerMP(1e9)
+      bMaxTalents  → SetLocalPlayerTalents(100, 100, 100, 100)
+      bForceLevel  → SetLocalPlayerLevel(clamp(TargetLevel, 1, 255))
+      bForceExp    → SetLocalPlayerExp(max(TargetExp, 0))
+
+  SocialCheats.{h,cpp}  ← 신규
+    Tick() 에서
+      bForceFriendship → SetLocalPlayerFriendshipPoint(TargetFriendship)
+      bForceArenaRP    → SetLocalPlayerArenaRankPoint(TargetArenaRP)
+
+  PalCheats.{h,cpp}  ← 신규 (보유 팰 변조)
+    Tick() 에서 Menu::Config::SelectedPalSlot 으로 슬롯 선택 후,
+    IsPalSlotEmpty 가드 통과 시
+      bPalGodMode    → SetPalHP(slot, 1e9)
+      bPalMaxSanity  → SetPalSanity(slot, 100.0f)
+      bPalInfiniteMP → SetPalMP(slot, 1e9)
+      bPalMaxTalents → SetPalTalents(slot, 100, 100, 100, 100)
+      bPalForceLevel → SetPalLevel(slot, clamp(PalTargetLevel, 1, 255))
+      bPalForceExp   → SetPalExp(slot, max(PalTargetExp, 0))
+
+  TechCheats.{cpp}  ← 확장
+    기존 bFreeTechPoint 외에 bFreeBossTechPoint 처리 추가
+      → SetLocalBossTechnologyPoint(9999)
+
+[3-4] Project/GUI/Menu.{h,cpp}
+  - Settings 구조체 확장:
+      bFreeBossTechPoint
+      [StatBoost]   bMaxSanity, bInfiniteMP, bMaxTalents
+                    bForceLevel + TargetLevel(int)
+                    bForceExp   + TargetExp(int64_t)
+      [Social]      bForceFriendship + TargetFriendship(int)
+                    bForceArenaRP    + TargetArenaRP(int)
+      [Pals]        SelectedPalSlot(int)
+                    bPalGodMode / bPalMaxSanity / bPalInfiniteMP /
+                    bPalMaxTalents
+                    bPalForceLevel + PalTargetLevel
+                    bPalForceExp   + PalTargetExp(int64_t)
+  - Menu.h 에 <cstdint> 명시적 include (int64_t 필드 사용 때문)
+
+  - Menu.cpp 를 통째로 재작성:
+      기존 6 개 DrawXxxSection 을 7 개 DrawXxxTab 으로 교체.
+      ImGui::BeginTabBar("##MainTabs", Reorderable) 안에 다음 탭 배치:
+
+        [Player]      God / Stamina / Ammo / Hunger / Shield / StatusPoint
+                      + Live HP·SP·Food·Shield·UnusedStatusPoint
+        [Stat Boost]  Sanity / MP / Talents / Level / Exp
+                      + Live Level·Exp·Sanity·MP·Talents
+        [Tech]        TechPoint / BossTechPoint + Live
+        [Social]      Friendship / ArenaRP + Live
+        [Pals]        SlotCount / SlotIndex 입력
+                      Pal God / Sanity / MP / Talents / Level / Exp
+                      + 빈 슬롯 경고 + 슬롯별 Live 표시
+        [Environment] Always Normal Temperature (Track 2 후킹 유지)
+        [Inventory]   Force Item StackCount (Container/Slot/Count)
+
+      각 탭 내부는 SeparatorText("Toggles") / SeparatorText("Live Stats")
+      로 영역 구분.
+  - 메뉴 기본 크기 (440, 640) → (520, 540) 으로 변경 (탭 UI 라 세로
+    압박 해소).
+
+[3-5] Project/Core/HackMain.cpp
+  - 헤더 include 추가:
+      Cheats/MemoryCheats/StatBoost.h
+      Cheats/MemoryCheats/SocialCheats.h
+      Cheats/MemoryCheats/PalCheats.h
+  - MainLoop 에서 매 프레임 호출 추가:
+      StatBoost::Tick();
+      SocialCheats::Tick();
+      PalCheats::Tick();
+
+[3-6] Project/CMakeLists.txt
+  - Cheats/MemoryCheats/{StatBoost,SocialCheats,PalCheats}.cpp 등록
+
+[3-7] Reference/mdfiles/CT_Analysis_Palworld.md  ← 신규 보고서
+  - Palworld-Win64-Shipping.CT 의 단순 메모리 변조 / AOB 인젝션
+    카테고리화 결과
+  - 안티치트 관점에서의 시사점 (.text 무결성 검사, 알려진 AOB
+    셀프 스캔, 4 개 베이스 후크 보호 등)
+  - 부록: AOB 시그니처 인덱스 (방어용 자체 스캔 리스트)
+
+
+[4] 안전성/안티치트 고려
+───────────────────────────────────────────────────────────────────────────────
+  - 신규 setter 도 기존 패턴 그대로 WriteAt<T>() → IsBadWritePtr 가드 →
+    *(T*)addr = value 흐름. 추가적인 raw write 는 없음.
+  - 보유 팰 변조는 빈 슬롯에서 nullptr 역참조가 발생하지 않도록
+    IsPalSlotEmpty(slot) 로 매 프레임 선검사 + PalParam(slot) 내부에서
+    nullptr 시 즉시 return 한다.
+  - PalStorage 가 초기에는 0 일 수 있다 (게임 시작 직후 동기화 전).
+    이 경우 GetPalSlotCount() == 0 → 메뉴에 "PalStorage not loaded"
+    안내 표시되고 Tick 은 무사 무작동.
+  - Talent_HP/Melee/Shot/Defense 를 100 까지 채우는 것은 SaveParameter
+    가 클라이언트에 임베드된 값이라 즉시 데미지/HP 계수에 반영되지만,
+    서버 권위가 있는 모드에선 OnRep_* 으로 되돌려질 수 있다. 검증 후
+    필요 시 Track 2 후킹으로 이주 검토.
+
+
+[5] 향후 작업 / TODO
+───────────────────────────────────────────────────────────────────────────────
+  - PalStorage 동기화 지연 문제:
+    메뉴를 열었을 때 자동으로 PalStorage 가 잡힐 때까지 polling
+    상태를 보여주는 인디케이터 추가 (현재는 정적 안내문).
+  - 슬롯 인덱스 → 팰 ID/이름 매핑:
+    UPalIndividualCharacterSaveParameter::CharacterID (FName, +0x000)
+    를 읽어 인간이 알아볼 수 있는 라벨로 표시. FName lookup 헬퍼 필요.
+  - 보유 팰의 Rank / RankUpExp / PassiveSkillList 변조 추가 검토.
+    Rank 는 1~5 단계 카운터라 단순 byte write 만으로도 효과 확인 가능.
+  - "Pal Force All Slots" 옵션:
+    한 슬롯이 아닌 모든 보유 팰에 동시에 Max Talents/Level 을 적용하는
+    배치 모드. SlotArray 순회 + IsPalSlotEmpty 스킵 구조로 구현.
+  - 2026-05-06 리포트의 GWorld AOB 시그니처화 (P1-6) 는 그대로 유효.
+  - Tab UI 재구성을 계기로 ImGui Window Docking / Save Layout 도입 검토.
+
+
+[6] 검증 체크리스트 (실행 시점에 확인할 항목)
+───────────────────────────────────────────────────────────────────────────────
+  [ ] DLL 인젝션 후 INSERT 키 → ImGui 메뉴 표시, 상단에 7 개 탭 노출
+  [ ] [Player] 탭 — 기존 5 개 토글 동작 + Live HP/SP/Food/Shield 표시
+  [ ] [Stat Boost] 탭 — Max Sanity ON → SaveParameter SanityValue 가
+      100.0 으로 매 프레임 복구
+  [ ] [Stat Boost] 탭 — Infinite MP ON → MP 게이지가 깎이지 않음
+  [ ] [Stat Boost] 탭 — Max Talents ON → 캐릭터 IV 4 종이 100 표시
+  [ ] [Stat Boost] 탭 — Force Level/Exp + 입력값 → 다음 프레임에 적용
+  [ ] [Tech] 탭 — Free Boss Technology Points ON → 보스 기술 트리
+      포인트가 9999 유지
+  [ ] [Social] 탭 — Force Friendship/Arena RP + InputInt → 적용 후
+      게임 UI 에서 동일한 값 확인
+  [ ] [Pals] 탭 — 팰박스를 한 번 열고 다시 메뉴 열면 SlotCount 가
+      0 이 아닌 값으로 표시
+  [ ] [Pals] 탭 — Pal Slot Index 변경 시 Live Stats 가 해당 팰의
+      실제 Level/Exp/HP/MP/Sanity/Talents 와 일치
+  [ ] [Pals] 탭 — 빈 슬롯 선택 시 노란색 "EMPTY" 메시지 출력 +
+      토글이 적용되지 않음
+  [ ] [Pals] 탭 — 점유된 슬롯에서 Pal God / Max Talents / Force Level
+      적용 후 게임 UI(팰 상태창) 에서 동일하게 반영 확인
+  [ ] [Environment] 탭 — 기존 Always Normal Temperature 동작 동일
+  [ ] [Inventory] 탭 — Force Item StackCount 동작 동일
+  [ ] 종료(END) 키 후 게임이 크래시 없이 DLL 만 언로드 (Track 2 후킹
+      정리 흐름 동일)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 끝.
+═══════════════════════════════════════════════════════════════════════════════

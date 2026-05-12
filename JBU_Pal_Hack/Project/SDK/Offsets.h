@@ -35,6 +35,7 @@ namespace SDK::Offsets
     namespace PlayerState {
         constexpr uintptr_t PawnPrivate    = 0x308;
         constexpr uintptr_t InventoryData  = 0x5D8; // UPalPlayerInventoryData*
+        constexpr uintptr_t PalStorage     = 0x5E0; // UPalPlayerDataPalStorage*
         constexpr uintptr_t TechnologyData = 0x5E8; // UPalTechnologyData*
     }
     namespace Pawn {
@@ -92,5 +93,21 @@ namespace SDK::Offsets
 
     namespace ItemSlot {
         constexpr uintptr_t StackCount = 0x154; // int32
+    }
+
+    // ───── 보유 팰 (Pal Box / Storage) 체인 ─────
+    // PlayerState → PalStorage → TargetContainer → SlotArray[i] → ReplicateIndividualParameter
+    namespace PalStorage {
+        constexpr uintptr_t TargetContainer = 0x30; // UPalIndividualCharacterContainer*
+    }
+    namespace PalCharContainer {
+        // UPalIndividualCharacterContainer : UPalContainerBase
+        // TArray<UPalIndividualCharacterSlot*> SlotArray; @ 0x80
+        constexpr uintptr_t SlotArray_Data = 0x80;
+        constexpr uintptr_t SlotArray_Num  = 0x88;
+    }
+    namespace PalCharSlot {
+        constexpr uintptr_t Handle                       = 0x60; // UPalIndividualCharacterHandle*
+        constexpr uintptr_t ReplicateIndividualParameter = 0x98; // UPalIndividualCharacterParameter*
     }
 }

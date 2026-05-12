@@ -46,6 +46,17 @@ namespace Menu
         int  TargetFriendship = 9999;
         bool bForceArenaRP    = false;
         int  TargetArenaRP    = 9999;
+
+        // ── 신규: 보유 팰 (PalCheats.cpp) ──
+        int     SelectedPalSlot   = 0;
+        bool    bPalGodMode       = false;   // HP = 1e9
+        bool    bPalMaxSanity     = false;
+        bool    bPalInfiniteMP    = false;
+        bool    bPalMaxTalents    = false;
+        bool    bPalForceLevel    = false;
+        int     PalTargetLevel    = 50;
+        bool    bPalForceExp      = false;
+        int64_t PalTargetExp      = 1'000'000;
     };
 
     extern Settings Config;

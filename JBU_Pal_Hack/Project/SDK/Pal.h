@@ -84,4 +84,33 @@ namespace SDK
     // 실패 시 -1 / false.
     int  GetItemSlotStackCount(int containerIndex, int slotIndex);
     bool SetItemSlotStackCount(int containerIndex, int slotIndex, int value);
+
+    // ───── 보유 팰 (Pal Box / Storage) ─────
+    // 체인: PlayerState → PalStorage → TargetContainer → SlotArray[index]
+    //       → ReplicateIndividualParameter → (+0x388 = SaveParameter)
+    uintptr_t GetLocalPalStorage();
+    uintptr_t GetLocalPalContainer();
+    int       GetPalSlotCount();                          // 컨테이너 총 슬롯 수 (빈 슬롯 포함)
+    uintptr_t GetPalSlotAt(int slotIndex);                // UPalIndividualCharacterSlot*
+    uintptr_t GetPalIndividualParameterAt(int slotIndex); // UPalIndividualCharacterParameter*
+    bool      IsPalSlotEmpty(int slotIndex);
+
+    // 보유 팰 슬롯의 SaveParameter 멤버 R/W.
+    // 모든 함수는 ReplicateIndividualParameter 가 nullptr 이면 실패(빈 슬롯).
+    int     GetPalLevel(int slotIndex);
+    bool    SetPalLevel(int slotIndex, uint8_t value);
+    int64_t GetPalExp(int slotIndex);
+    bool    SetPalExp(int slotIndex, int64_t value);
+    int64_t GetPalHP(int slotIndex);
+    bool    SetPalHP(int slotIndex, int64_t value);
+    int64_t GetPalMaxHP(int slotIndex);
+    int     GetPalTalentHP(int slotIndex);
+    int     GetPalTalentMelee(int slotIndex);
+    int     GetPalTalentShot(int slotIndex);
+    int     GetPalTalentDefense(int slotIndex);
+    bool    SetPalTalents(int slotIndex, uint8_t hp, uint8_t melee, uint8_t shot, uint8_t def);
+    float   GetPalSanity(int slotIndex);
+    bool    SetPalSanity(int slotIndex, float value);
+    int64_t GetPalMP(int slotIndex);
+    bool    SetPalMP(int slotIndex, int64_t value);
 }
