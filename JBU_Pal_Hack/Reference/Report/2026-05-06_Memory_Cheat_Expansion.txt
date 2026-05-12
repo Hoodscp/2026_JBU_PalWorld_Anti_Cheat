@@ -1,0 +1,213 @@
+═══════════════════════════════════════════════════════════════════════════════
+ JBU Palworld Internal Cheat — Memory Cheat 확장 작업 리포트
+ 작성일: 2026-05-06
+ 작업 브랜치: Dev-Hack-Jihoon
+ 작성자: Jihoon (with Claude Opus 4.7)
+═══════════════════════════════════════════════════════════════════════════════
+
+
+[1] 작업 목표
+───────────────────────────────────────────────────────────────────────────────
+Reference/SDK (Dumper-7 출력본) 를 분석해 다음 게임 데이터 멤버에 대한 read/write
+파이프라인을 구축하고 GUI 토글 기반 메모리 치트로 노출한다.
+
+  - UnusedStatusPoint (스킬 포인트 풀)
+  - Current HP (HP Value)
+  - Stamina (SP)
+  - FullStomach (포만감)
+  - ShieldHP (실드)
+  - TechnologyPoint (연구 포인트)
+  - ItemSlotArray / SlotArray[0] / StackCount (인벤토리 첫 슬롯의 개수)
+  - CurrentTemperature (온도)  ← 1차 시도 후 본 작업에서는 제외 결정
+
+
+[2] SDK 구조 분석 결과
+───────────────────────────────────────────────────────────────────────────────
+
+[2-1] 핵심 클래스 ↔ 멤버 매핑
+
+  UPalIndividualCharacterParameter
+    +0x388  FPalIndividualCharacterSaveParameter SaveParameter (임베드)
+            └ 이 베이스(0x388)에 SaveParameter 멤버 오프셋을 더하면
+              "절대 오프셋" 이 됨. 기존 코드의 HP=0x400 (=0x388+0x78) 과 정합.
+
+  FPalIndividualCharacterSaveParameter (임베드 구조체)
+    +0x078  FFixedPoint64 Hp                  → 절대 0x400 (기존)
+    +0x084  float         FullStomach         → 절대 0x40C
+    +0x0E0  FFixedPoint64 MaxHP               → 절대 0x468
+    +0x100  FFixedPoint64 ShieldHP            → 절대 0x488
+    +0x108  FFixedPoint64 ShieldMaxHP         → 절대 0x490
+    +0x16C  float         MaxFullStomach      → 절대 0x4F4
+    +0x174  uint16        UnusedStatusPoint   → 절대 0x4FC
+
+  UPalCharacterParameterComponent
+    +0x130  UPalIndividualCharacterParameter* IndividualParameter (기존)
+    +0x328  FFixedPoint64 SP (Stamina, 런타임 전용 — SaveParameter 외부)
+    +0x460  UPalItemContainer* ItemContainer (※ 사용하지 않음 — 후술)
+
+  APalPlayerState
+    +0x308  APawn*                  PawnPrivate           (기존)
+    +0x5D8  UPalPlayerInventoryData* InventoryData
+    +0x5E8  UPalTechnologyData*      TechnologyData
+
+  UPalPlayerInventoryData
+    +0x190  UPalItemContainerMultiHelper* InventoryMultiHelper
+
+  UPalItemContainerMultiHelper
+    +0x038  TArray<UPalItemContainer*> Containers
+              { Data(+0x038), Num(+0x040), Max(+0x044) }
+
+  UPalItemContainer (← Containers[0] 가 가리키는 컨테이너)
+    +0x070  TArray<UPalItemSlot*> ItemSlotArray
+              { Data(+0x070), Num(+0x078), Max(+0x07C) }
+
+  UPalItemSlot
+    +0x154  int32 StackCount
+
+  UPalTechnologyData
+    +0x150  int32 TechnologyPoint
+    +0x154  int32 BossTechnologyPoint
+
+
+[2-2] 최종 인벤토리 포인터 체인 (사용자 제공 도식 일치)
+
+    GameState        (+0x158)
+      → PlayerArray  (+0x2A8)
+        → PlayerArray[0]  (+0x000)
+          → InventoryData         (+0x5D8)
+            → InventoryMultiHelper (+0x190)
+              → Containers         (+0x038)
+                → Containers[0]    (+0x000)
+                  → ItemSlotArray  (+0x070)
+                    → SlotArray[0] (+0x000)
+                      → StackCount (+0x154)
+
+
+[2-3] 폐기된 1차 분석 (참고용)
+
+  최초에는 "UPalCharacterParameterComponent +0x460 ItemContainer" 를 단축 경로로
+  사용했으나 게임에서 실제 슬롯이 잡히지 않았음. 이는 해당 포인터가 플레이어
+  메인 인벤토리가 아닌 별도(equip/transient) 컨테이너를 가리키기 때문.
+  → InventoryData 를 통한 정공 체인으로 교체.
+
+
+[3] 코드 변경 내역
+───────────────────────────────────────────────────────────────────────────────
+
+[3-1] Project/SDK/Offsets.h
+  - PlayerState::InventoryData (0x5D8) 추가
+  - PlayerState::TechnologyData (0x5E8) 추가
+  - CharParamComp::SP (0x328) 추가
+  - InventoryData::InventoryMultiHelper (0x190) 추가
+  - MultiHelper::Containers_{Data,Num} (0x38, 0x40) 추가
+  - IndividualParam::{MaxHP, FullStomach, MaxFullStomach, ShieldHP,
+                      ShieldMaxHP, UnusedStatusPoint} 추가
+  - TechnologyData::{TechnologyPoint, BossTechnologyPoint} 추가
+  - ItemContainer::ItemSlotArray_{Data,Num} (0x70, 0x78) 추가
+  - ItemSlot::StackCount (0x154) 추가
+  - 기존 IndividualParam::HP (0x400) 유지 + 출처 주석 보강
+  - (제거) CharParamComp::ItemContainer
+  - (제거) BodyTemperatureComp / PlayerCharacter 네임스페이스
+
+[3-2] Project/SDK/Pal.h, Pal.cpp
+  - 신규 체인 헬퍼:
+      GetLocalTechnologyData()
+      GetLocalInventoryData()
+      GetLocalInventoryMultiHelper()
+      GetInventoryContainerAt(containerIndex)
+      GetItemSlotAt(containerIndex, slotIndex)
+  - 신규 데이터 API:
+      GetLocalPlayerMaxHP()
+      Get/SetLocalPlayerStamina()
+      Get/SetLocalPlayerFullStomach()
+      GetLocalPlayerMaxFullStomach()
+      Get/SetLocalPlayerShieldHP()
+      GetLocalPlayerShieldMaxHP()
+      Get/SetLocalPlayerUnusedStatusPoint()
+      Get/SetLocalTechnologyPoint()
+      Get/SetItemSlotStackCount(containerIdx, slotIdx, ...)
+  - 내부 공통:
+      WriteAt<T>(address, value)  IsBadWritePtr 가드 포함
+  - (제거) 온도 관련 API
+  - (제거) 단일 인덱스 ItemSlotAt 1차 버전
+
+[3-3] Project/Cheats/MemoryCheats/  (신규 모듈 4개)
+  PlayerCheats.{h,cpp}
+    Tick() 에서 Menu::Config 를 보고
+      bInfiniteStamina  → SetLocalPlayerStamina(1e9)
+      bNoHunger         → SetLocalPlayerFullStomach(100000.0f)
+      bShieldBoost      → SetLocalPlayerShieldHP(1e9)
+      bFreeStatusPoint  → SetLocalPlayerUnusedStatusPoint(999)
+
+  TechCheats.{h,cpp}
+    Tick() 에서 bFreeTechPoint → SetLocalTechnologyPoint(9999)
+
+  InventoryCheats.{h,cpp}
+    Tick() 에서 bForceItemStack 활성 시
+      SetItemSlotStackCount(SelectedContainerIdx, SelectedSlotIndex,
+                            TargetStackCount) 호출
+
+  TempControl.{h,cpp}    ← 작성 후 제거 (요구사항 변경)
+
+[3-4] Project/GUI/Menu.{h,cpp}
+  - Settings 구조체 확장:
+      bNoHunger, bShieldBoost, bFreeStatusPoint
+      bFreeTechPoint
+      bForceItemStack, SelectedContainerIdx, SelectedSlotIndex,
+                       TargetStackCount
+  - DrawPlayerSection / DrawTechSection / DrawInventorySection /
+    DrawStatusSection 으로 섹션 분리
+  - Real-Time Memory Status 패널에서
+      HP / SP / Food / Shield / UnusedStatusPoint 동시 표시
+  - Container Index 입력 필드 추가 (기본 0 = 메인 인벤토리)
+  - (제거) Environment 섹션, bForceTemperature, TargetTemperature
+
+[3-5] Project/Core/HackMain.cpp
+  - MainLoop 에 PlayerCheats / TechCheats / InventoryCheats Tick() 호출 추가
+  - 기존 GodMode::Tick() 유지
+
+[3-6] Project/CMakeLists.txt
+  - Cheats/MemoryCheats/{PlayerCheats,TechCheats,InventoryCheats}.cpp 등록
+
+
+[4] 안전성/안티치트 고려
+───────────────────────────────────────────────────────────────────────────────
+  - 모든 setter 는 IsBadWritePtr 로 가드된 후 *(T*)address = value.
+  - 모든 chain step (Step()) 은 IsBadReadPtr 로 보호 + 0 전파.
+  - 매 프레임 강제 덮어쓰기 방식이라 서버 권한 검증을 통과하지 못하는
+    멀티플레이/공식서버에서는 클라이언트 표시값만 잠시 변하고 재동기화 가능.
+    이는 현재 프로젝트(연구/실습 목적) 에서 의도된 동작.
+
+
+[5] 향후 작업 / TODO
+───────────────────────────────────────────────────────────────────────────────
+  - GWorld 절대 오프셋(0x090D3030) 의 AOB 시그니처화 (P1-6)
+    → 게임 패치마다 손으로 갱신할 필요 제거
+  - StackCount setter 호출 시 OnRep_StackCount 가 즉시 클라이언트 값을
+    되돌리는지 검증. 만약 그렇다면 Track 2 (함수 후킹) 로 이주 검토.
+  - CurrentTemperature 재도전 시: UPalBodyTemperatureComponent 가
+    APalCharacter 의 일반 컴포넌트로 부착되어 있으므로 SDK 덤프에 직접
+    필드가 없음. 게임 내에서 Cheat Engine 으로 컴포넌트 시작주소를 잡고
+    APalPlayerCharacter base 와의 상대 오프셋을 추출 → Offsets.h 에 등록.
+  - 인벤토리 외 컨테이너(에센셜 슬롯, 장비 슬롯)는 Containers 배열의
+    다른 인덱스 → Container Index 입력으로 즉시 접근 가능.
+
+
+[6] 검증 체크리스트 (실행 시점에 확인할 항목)
+───────────────────────────────────────────────────────────────────────────────
+  [ ] DLL 인젝션 후 콘솔에 "[+] Kiero Initialized!" 출력
+  [ ] INSERT 키로 ImGui 메뉴 토글 동작
+  [ ] Real-Time Memory Status 패널의 HP / SP / Food / Shield 가
+      게임 UI 와 일치하는 값으로 표시되는지
+  [ ] Free Status Points 토글 ON → 캐릭터 창에서 999 포인트 표시 +
+      분배 후 다음 프레임에 다시 999 로 복구되는지
+  [ ] Free Technology Points 토글 ON → 기술 트리 화면에서 9999 표시
+  [ ] Container Index = 0, Slot Index = 0, Stack Count = 9999, Force ON
+      → 인벤토리 첫 칸 아이템 개수 9999 로 강제 유지
+  [ ] No Hunger / Shield Boost / Infinite Stamina / God Mode 각각 단독 ON 시
+      해당 게이지가 가득 찬 상태로 유지되는지
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 끝.
+═══════════════════════════════════════════════════════════════════════════════
