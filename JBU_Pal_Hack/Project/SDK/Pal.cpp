@@ -378,7 +378,61 @@ namespace SDK
         return WriteAt<int32_t>(slot + Offsets::ItemSlot::StackCount, value);
     }
 
-    // ───── 보유 팰 ─────
+    // ── 음식 부패 진행도 ──
+    float GetItemSlotCorruption(int containerIndex, int slotIndex)
+    {
+        uintptr_t slot = GetItemSlotAt(containerIndex, slotIndex);
+        if (!slot) return -1.0f;
+        return Scanner::ReadMemory<float>(slot + Offsets::ItemSlot::CorruptionProgressValue);
+    }
+
+    bool SetItemSlotCorruption(int containerIndex, int slotIndex, float value)
+    {
+        uintptr_t slot = GetItemSlotAt(containerIndex, slotIndex);
+        if (!slot) return false;
+        return WriteAt<float>(slot + Offsets::ItemSlot::CorruptionProgressValue, value);
+    }
+
+    // ── 장비 Dynamic Item Data (수동 hex 주소) ──
+    float GetDynamicDurability(uintptr_t addr)
+    {
+        if (!addr) return -1.0f;
+        return Scanner::ReadMemory<float>(addr + Offsets::DynamicItemData::Durability);
+    }
+
+    float GetDynamicMaxDurability(uintptr_t addr)
+    {
+        if (!addr) return -1.0f;
+        return Scanner::ReadMemory<float>(addr + Offsets::DynamicItemData::MaxDurability);
+    }
+
+    bool SetDynamicDurability(uintptr_t addr, float value)
+    {
+        if (!addr) return false;
+        return WriteAt<float>(addr + Offsets::DynamicItemData::Durability, value);
+    }
+
+    int GetDynamicRemainingBullets(uintptr_t addr)
+    {
+        if (!addr) return -1;
+        return Scanner::ReadMemory<int32_t>(addr + Offsets::DynamicItemData::RemainingBullets);
+    }
+
+    bool SetDynamicRemainingBullets(uintptr_t addr, int value)
+    {
+        if (!addr) return false;
+        return WriteAt<int32_t>(addr + Offsets::DynamicItemData::RemainingBullets, value);
+    }
+
+    // ───── 보유 팰 (Box / Otomo / 임의 컨테이너) ─────
+    namespace {
+        // Otomo(데려다니는 팰) 또는 임의 컨테이너 베이스. SDK 덤프상 직접 멤버
+        // 오프셋이 없으므로 외부(Cheat Engine 사용자 입력 또는 향후 AOB 후크)
+        // 에서 한 번 잡아 등록한다. 0 이면 Otomo 기능 자체가 비활성.
+        // std::atomic 미사용 — 단일 메인 루프 스레드에서만 갱신/조회됨.
+        uintptr_t g_OtomoContainerOverride = 0;
+    }
+
     uintptr_t GetLocalPalStorage()
     {
         return Step(GetLocalPlayerState(), Offsets::PlayerState::PalStorage);
@@ -389,18 +443,26 @@ namespace SDK
         return Step(GetLocalPalStorage(), Offsets::PalStorage::TargetContainer);
     }
 
-    int GetPalSlotCount()
+    void SetOtomoContainerOverride(uintptr_t containerBase)
     {
-        uintptr_t container = GetLocalPalContainer();
+        g_OtomoContainerOverride = containerBase;
+    }
+
+    uintptr_t GetOtomoContainerOverride()
+    {
+        return g_OtomoContainerOverride;
+    }
+
+    // ── 일반화된 컨테이너 → Slot / IndividualParameter ──
+    int GetSlotCountIn(uintptr_t container)
+    {
         if (!container) return 0;
         return (int)Scanner::ReadMemory<int32_t>(container + Offsets::PalCharContainer::SlotArray_Num);
     }
 
-    uintptr_t GetPalSlotAt(int slotIndex)
+    uintptr_t GetSlotInContainer(uintptr_t container, int slotIndex)
     {
-        if (slotIndex < 0) return 0;
-        uintptr_t container = GetLocalPalContainer();
-        if (!container) return 0;
+        if (!container || slotIndex < 0) return 0;
         int32_t num = Scanner::ReadMemory<int32_t>(container + Offsets::PalCharContainer::SlotArray_Num);
         if (slotIndex >= num) return 0;
         uintptr_t arrData = Scanner::ReadMemory<uintptr_t>(container + Offsets::PalCharContainer::SlotArray_Data);
@@ -408,132 +470,149 @@ namespace SDK
         return Scanner::ReadMemory<uintptr_t>(arrData + (uintptr_t)slotIndex * sizeof(uintptr_t));
     }
 
-    uintptr_t GetPalIndividualParameterAt(int slotIndex)
+    uintptr_t GetIndividualParameterInContainer(uintptr_t container, int slotIndex)
     {
-        uintptr_t slot = GetPalSlotAt(slotIndex);
+        uintptr_t slot = GetSlotInContainer(container, slotIndex);
         if (!slot) return 0;
         return Scanner::ReadMemory<uintptr_t>(slot + Offsets::PalCharSlot::ReplicateIndividualParameter);
     }
 
-    bool IsPalSlotEmpty(int slotIndex)
-    {
-        return GetPalIndividualParameterAt(slotIndex) == 0;
-    }
+    // ── Pal Box wrapper ──
+    int       GetPalSlotCount()                            { return GetSlotCountIn(GetLocalPalContainer()); }
+    uintptr_t GetPalSlotAt(int s)                          { return GetSlotInContainer(GetLocalPalContainer(), s); }
+    uintptr_t GetPalIndividualParameterAt(int s)           { return GetIndividualParameterInContainer(GetLocalPalContainer(), s); }
+    bool      IsPalSlotEmpty(int s)                        { return GetPalIndividualParameterAt(s) == 0; }
 
-    // ── per-Pal stat helpers ──
-    // 모두 ReplicateIndividualParameter(=IndividualParameter base) 위에 동일한
-    // SaveParameter 오프셋 테이블을 재사용. LocalPlayer 와 코드 구조 동일.
-    namespace {
-        inline uintptr_t PalParam(int slotIndex) {
-            return GetPalIndividualParameterAt(slotIndex);
-        }
-    }
+    // ── Otomo(파티) wrapper ──
+    int       GetPartySlotCount()                          { return GetSlotCountIn(g_OtomoContainerOverride); }
+    uintptr_t GetPartySlotAt(int s)                        { return GetSlotInContainer(g_OtomoContainerOverride, s); }
+    uintptr_t GetPartyIndividualParameterAt(int s)         { return GetIndividualParameterInContainer(g_OtomoContainerOverride, s); }
+    bool      IsPartySlotEmpty(int s)                      { return GetPartyIndividualParameterAt(s) == 0; }
 
-    int GetPalLevel(int slotIndex)
+    // ── per-Pal stat helpers (container-base 명시) ──
+    int GetPalLevelIn(uintptr_t c, int s)
     {
-        uintptr_t p = PalParam(slotIndex);
+        uintptr_t p = GetIndividualParameterInContainer(c, s);
         if (!p) return -1;
         return (int)Scanner::ReadMemory<uint8_t>(p + Offsets::IndividualParam::Level);
     }
-    bool SetPalLevel(int slotIndex, uint8_t value)
+    bool SetPalLevelIn(uintptr_t c, int s, uint8_t v)
     {
-        uintptr_t p = PalParam(slotIndex);
+        uintptr_t p = GetIndividualParameterInContainer(c, s);
         if (!p) return false;
-        return WriteAt<uint8_t>(p + Offsets::IndividualParam::Level, value);
+        return WriteAt<uint8_t>(p + Offsets::IndividualParam::Level, v);
     }
 
-    int64_t GetPalExp(int slotIndex)
+    int64_t GetPalExpIn(uintptr_t c, int s)
     {
-        uintptr_t p = PalParam(slotIndex);
+        uintptr_t p = GetIndividualParameterInContainer(c, s);
         if (!p) return -1;
         return Scanner::ReadMemory<int64_t>(p + Offsets::IndividualParam::Exp);
     }
-    bool SetPalExp(int slotIndex, int64_t value)
+    bool SetPalExpIn(uintptr_t c, int s, int64_t v)
     {
-        uintptr_t p = PalParam(slotIndex);
+        uintptr_t p = GetIndividualParameterInContainer(c, s);
         if (!p) return false;
-        return WriteAt<int64_t>(p + Offsets::IndividualParam::Exp, value);
+        return WriteAt<int64_t>(p + Offsets::IndividualParam::Exp, v);
     }
 
-    int64_t GetPalHP(int slotIndex)
+    int64_t GetPalHPIn(uintptr_t c, int s)
     {
-        uintptr_t p = PalParam(slotIndex);
+        uintptr_t p = GetIndividualParameterInContainer(c, s);
         if (!p) return -1;
         return Scanner::ReadMemory<int64_t>(p + Offsets::IndividualParam::HP);
     }
-    bool SetPalHP(int slotIndex, int64_t value)
+    bool SetPalHPIn(uintptr_t c, int s, int64_t v)
     {
-        uintptr_t p = PalParam(slotIndex);
+        uintptr_t p = GetIndividualParameterInContainer(c, s);
         if (!p) return false;
-        return WriteAt<int64_t>(p + Offsets::IndividualParam::HP, value);
+        return WriteAt<int64_t>(p + Offsets::IndividualParam::HP, v);
     }
 
-    int64_t GetPalMaxHP(int slotIndex)
+    int64_t GetPalMaxHPIn(uintptr_t c, int s)
     {
-        uintptr_t p = PalParam(slotIndex);
+        uintptr_t p = GetIndividualParameterInContainer(c, s);
         if (!p) return -1;
         return Scanner::ReadMemory<int64_t>(p + Offsets::IndividualParam::MaxHP);
     }
 
-    int GetPalTalentHP(int slotIndex)
+    int GetPalTalentHPIn(uintptr_t c, int s)
     {
-        uintptr_t p = PalParam(slotIndex);
+        uintptr_t p = GetIndividualParameterInContainer(c, s);
         if (!p) return -1;
         return (int)Scanner::ReadMemory<uint8_t>(p + Offsets::IndividualParam::Talent_HP);
     }
-    int GetPalTalentMelee(int slotIndex)
+    int GetPalTalentMeleeIn(uintptr_t c, int s)
     {
-        uintptr_t p = PalParam(slotIndex);
+        uintptr_t p = GetIndividualParameterInContainer(c, s);
         if (!p) return -1;
         return (int)Scanner::ReadMemory<uint8_t>(p + Offsets::IndividualParam::Talent_Melee);
     }
-    int GetPalTalentShot(int slotIndex)
+    int GetPalTalentShotIn(uintptr_t c, int s)
     {
-        uintptr_t p = PalParam(slotIndex);
+        uintptr_t p = GetIndividualParameterInContainer(c, s);
         if (!p) return -1;
         return (int)Scanner::ReadMemory<uint8_t>(p + Offsets::IndividualParam::Talent_Shot);
     }
-    int GetPalTalentDefense(int slotIndex)
+    int GetPalTalentDefenseIn(uintptr_t c, int s)
     {
-        uintptr_t p = PalParam(slotIndex);
+        uintptr_t p = GetIndividualParameterInContainer(c, s);
         if (!p) return -1;
         return (int)Scanner::ReadMemory<uint8_t>(p + Offsets::IndividualParam::Talent_Defense);
     }
-    bool SetPalTalents(int slotIndex, uint8_t hp, uint8_t melee, uint8_t shot, uint8_t def)
+    bool SetPalTalentsIn(uintptr_t c, int s, uint8_t hp, uint8_t mel, uint8_t shot, uint8_t def)
     {
-        uintptr_t p = PalParam(slotIndex);
+        uintptr_t p = GetIndividualParameterInContainer(c, s);
         if (!p) return false;
         bool ok = true;
         ok &= WriteAt<uint8_t>(p + Offsets::IndividualParam::Talent_HP,      hp);
-        ok &= WriteAt<uint8_t>(p + Offsets::IndividualParam::Talent_Melee,   melee);
+        ok &= WriteAt<uint8_t>(p + Offsets::IndividualParam::Talent_Melee,   mel);
         ok &= WriteAt<uint8_t>(p + Offsets::IndividualParam::Talent_Shot,    shot);
         ok &= WriteAt<uint8_t>(p + Offsets::IndividualParam::Talent_Defense, def);
         return ok;
     }
 
-    float GetPalSanity(int slotIndex)
+    float GetPalSanityIn(uintptr_t c, int s)
     {
-        uintptr_t p = PalParam(slotIndex);
+        uintptr_t p = GetIndividualParameterInContainer(c, s);
         if (!p) return -1.0f;
         return Scanner::ReadMemory<float>(p + Offsets::IndividualParam::SanityValue);
     }
-    bool SetPalSanity(int slotIndex, float value)
+    bool SetPalSanityIn(uintptr_t c, int s, float v)
     {
-        uintptr_t p = PalParam(slotIndex);
+        uintptr_t p = GetIndividualParameterInContainer(c, s);
         if (!p) return false;
-        return WriteAt<float>(p + Offsets::IndividualParam::SanityValue, value);
+        return WriteAt<float>(p + Offsets::IndividualParam::SanityValue, v);
     }
 
-    int64_t GetPalMP(int slotIndex)
+    int64_t GetPalMPIn(uintptr_t c, int s)
     {
-        uintptr_t p = PalParam(slotIndex);
+        uintptr_t p = GetIndividualParameterInContainer(c, s);
         if (!p) return -1;
         return Scanner::ReadMemory<int64_t>(p + Offsets::IndividualParam::MP);
     }
-    bool SetPalMP(int slotIndex, int64_t value)
+    bool SetPalMPIn(uintptr_t c, int s, int64_t v)
     {
-        uintptr_t p = PalParam(slotIndex);
+        uintptr_t p = GetIndividualParameterInContainer(c, s);
         if (!p) return false;
-        return WriteAt<int64_t>(p + Offsets::IndividualParam::MP, value);
+        return WriteAt<int64_t>(p + Offsets::IndividualParam::MP, v);
     }
+
+    // ── Pal Box wrapper (기존 시그니처 유지) ──
+    int     GetPalLevel(int s)                                  { return GetPalLevelIn(GetLocalPalContainer(), s); }
+    bool    SetPalLevel(int s, uint8_t v)                       { return SetPalLevelIn(GetLocalPalContainer(), s, v); }
+    int64_t GetPalExp(int s)                                    { return GetPalExpIn(GetLocalPalContainer(), s); }
+    bool    SetPalExp(int s, int64_t v)                         { return SetPalExpIn(GetLocalPalContainer(), s, v); }
+    int64_t GetPalHP(int s)                                     { return GetPalHPIn(GetLocalPalContainer(), s); }
+    bool    SetPalHP(int s, int64_t v)                          { return SetPalHPIn(GetLocalPalContainer(), s, v); }
+    int64_t GetPalMaxHP(int s)                                  { return GetPalMaxHPIn(GetLocalPalContainer(), s); }
+    int     GetPalTalentHP(int s)                               { return GetPalTalentHPIn(GetLocalPalContainer(), s); }
+    int     GetPalTalentMelee(int s)                            { return GetPalTalentMeleeIn(GetLocalPalContainer(), s); }
+    int     GetPalTalentShot(int s)                             { return GetPalTalentShotIn(GetLocalPalContainer(), s); }
+    int     GetPalTalentDefense(int s)                          { return GetPalTalentDefenseIn(GetLocalPalContainer(), s); }
+    bool    SetPalTalents(int s, uint8_t hp, uint8_t m, uint8_t sh, uint8_t d) { return SetPalTalentsIn(GetLocalPalContainer(), s, hp, m, sh, d); }
+    float   GetPalSanity(int s)                                 { return GetPalSanityIn(GetLocalPalContainer(), s); }
+    bool    SetPalSanity(int s, float v)                        { return SetPalSanityIn(GetLocalPalContainer(), s, v); }
+    int64_t GetPalMP(int s)                                     { return GetPalMPIn(GetLocalPalContainer(), s); }
+    bool    SetPalMP(int s, int64_t v)                          { return SetPalMPIn(GetLocalPalContainer(), s, v); }
 }

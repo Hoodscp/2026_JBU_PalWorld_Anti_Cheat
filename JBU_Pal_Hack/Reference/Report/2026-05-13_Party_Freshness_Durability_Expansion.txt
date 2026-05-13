@@ -1,0 +1,298 @@
+═══════════════════════════════════════════════════════════════════════════════
+ JBU Palworld Internal Cheat — Otomo Party / 음식 신선도 / 장비 내구도 확장
+ 작성일: 2026-05-13
+ 작업 브랜치: Dev-Hack-Jihoon
+ 작성자: Jihoon (with Claude Opus 4.7)
+═══════════════════════════════════════════════════════════════════════════════
+
+
+[1] 작업 목표
+───────────────────────────────────────────────────────────────────────────────
+직전 2026-05-12 리포트(Pal Storage 변조 + 탭 UI) 후속으로 다음 세 가지를 추가
+한다.
+
+  (A) 보유 팰 변조의 적용 범위를 Pal Box 외에 "데려다니는 팰(Otomo / Party)"
+      까지 확장. SDK 헬퍼를 컨테이너 베이스 인자를 받는 형태로 일반화한 뒤,
+      UI 에서 Source(Box / Party) 라디오로 전환.
+
+  (B) 인벤토리 음식 부패 정지. UPalItemSlot 의 CorruptionProgressValue 를
+      매 프레임 0 으로 강제 → 영원히 신선. 단일 슬롯 / 컨테이너 일괄 두 가지
+      모드 제공.
+
+  (C) 장비 내구도 / 무기 잔탄 강제. UPalDynamicArmorItemDataBase /
+      UPalDynamicWeaponItemDataBase 인스턴스에 직접 R/W. TWeakObjectPtr 해소
+      는 현 단계에서 보류, 사용자가 한 번 hex 주소를 잡아 입력하는 패턴으로
+      bootstrap.
+
+
+[2] SDK 구조 분석 결과
+───────────────────────────────────────────────────────────────────────────────
+
+[2-1] Otomo(데려다니는 팰) 컨테이너 체인
+
+  UPalOtomoHolderComponentBase  : UActorComponent
+    +0x110  UPalIndividualCharacterContainer*  CharacterContainer
+            ↑ Pal Box(PalStorage.TargetContainer)와 완전히 동일한 타입.
+              SlotArray@0x80, Slot.ReplicateIndividualParameter@0x98 동일
+              → 기존 IndividualParam:: 오프셋 테이블 100% 재사용 가능.
+
+  ※ 단, UPalOtomoHolderComponentBase 는 ActorComponent 라 SDK 덤프 전체에서
+    "OtomoHolder* 멤버 필드"가 존재하지 않음. 런타임에 부착되는 컴포넌트라
+    정적 오프셋 한 줄로 도달하는 경로가 없음.
+
+  현 단계 해결책 = 사용자 입력 (수동 hex 주소).
+  중기 해결책   = AOB 후크로 OtomoHolderComponent 멤버 함수 진입 시 this 캐치.
+
+
+[2-2] 보유 팰 일반화 ─ "어떤 UPalIndividualCharacterContainer 든 동일 코드"
+
+    <Container 베이스>
+      → SlotArray.Data (+0x80) / SlotArray.Num (+0x88)
+        → Slot[i]
+          → ReplicateIndividualParameter (+0x98)
+            → SaveParameter base = +0x388
+              → 기존 IndividualParam:: 오프셋(Level/Exp/HP/MP/Sanity/Talents...)
+                전부 그대로 재사용
+
+  → 모든 GetPal*/SetPal* 를 *In(uintptr_t container, int slot) 시그니처로
+    재정렬. 기존 Pal Box 전용 함수는 wrapper 로 살아남음.
+
+
+[2-3] UPalItemSlot 추가 멤버 (음식 신선도)
+
+  UPalItemSlot
+    +0x154  int32  StackCount               (기존)
+    +0x158  float  CorruptionProgressValue  ← 신규
+            (0.0 = 신선, 1.0 = 부패 완료. RepNotify 멤버이며 클라이언트에서
+             직접 0 으로 매 프레임 덮어쓰면 부패 진행이 정지된 것처럼 동작.)
+    +0x190  TWeakObjectPtr<UPalDynamicItemDataBase>  DynamicItemData
+            (이 멤버는 자동 해소가 어려워 [2-4] 별도 경로로 우회.)
+
+
+[2-4] 장비 Dynamic Item Data 레이아웃 (Armor / Weapon 공통)
+
+  UPalDynamicArmorItemDataBase  : UPalDynamicItemDataBase
+    +0x78  float  Durability
+    +0x7C  float  MaxDurability
+
+  UPalDynamicWeaponItemDataBase : UPalDynamicItemDataBase
+    +0x78  float  Durability
+    +0x7C  float  MaxDurability
+    +0x84  int32  RemainingBullets
+
+  → Durability / MaxDurability 오프셋이 두 클래스에서 완전히 동일하므로
+    별도 분기 없이 같은 DynamicItemData:: 네임스페이스로 통합. RemainingBullets
+    는 Weapon 전용이지만 Armor 객체에 같은 오프셋으로 쓰면 무해(읽기 0).
+
+
+[2-5] TWeakObjectPtr 해소가 어려운 이유 (자동 도달 보류 사유)
+
+  UPalItemSlot.DynamicItemData 는 raw 포인터가 아니라
+      struct FWeakObjectPtr {
+          int32 ObjectIndex;        // +0x00
+          int32 ObjectSerialNumber; // +0x04
+      };
+  로, 객체 주소를 얻으려면 GUObjectArray (FChunkedFixedUObjectArray) 를 통한
+  chunk lookup 이 필요하다.
+      chunkIndex = ObjectIndex / 65536
+      itemIndex  = ObjectIndex % 65536
+      FUObjectItem* chunk = ((FUObjectItem**)(GUObjectArray + ObjObjectsOffset))[chunkIndex]
+      UObject* obj = *(UObject**)(chunk + itemIndex * 24)
+
+  현재 Offsets.h 에는 GUObjectArray 가 등록돼 있지 않고, 빌드마다 위치가
+  바뀌어 AOB 스캔 모듈이 별도로 필요함. 이번 작업에서는 채택하지 않고
+  Equipment Durability 는 사용자 hex 입력 방식으로 대체.
+
+
+[3] 코드 변경 내역
+───────────────────────────────────────────────────────────────────────────────
+
+[3-1] Project/SDK/Offsets.h
+  - ItemSlot::CorruptionProgressValue (0x158) 추가
+  - DynamicItemData 네임스페이스 신규:
+      Durability       (0x78)
+      MaxDurability    (0x7C)
+      RemainingBullets (0x84)
+  - 기존 ItemSlot::StackCount (0x154) 위 주석 보강 (DynamicItemData 가
+    TWeakObjectPtr 라 자동 해소 불가 사유 명시).
+
+[3-2] Project/SDK/Pal.h, Pal.cpp
+  - 보유 팰 변조 API 일반화:
+      SetOtomoContainerOverride(uintptr_t base)  — 외부에서 Otomo 컨테이너
+                                                   주소를 등록 (0 = 비활성)
+      GetOtomoContainerOverride()
+      GetSlotCountIn(container)
+      GetSlotInContainer(container, slot)
+      GetIndividualParameterInContainer(container, slot)
+  - per-Pal stat 헬퍼를 *In(container, slot, ...) 형태로 재구현:
+      GetPal{Level,Exp,HP,MaxHP,MP,Sanity,Talent*}In()
+      SetPal{Level,Exp,HP,MP,Sanity,Talents}In()
+  - 기존 Pal Box 전용 함수(GetPalLevel(slot), SetPalHP(slot, ...) 등)는
+    *In(GetLocalPalContainer(), ...) 로 위임하는 한 줄 wrapper 로 축소
+    → 시그니처 호환성 유지.
+  - Party wrapper 신규:
+      GetPartySlotCount(), GetPartySlotAt(), GetPartyIndividualParameterAt(),
+      IsPartySlotEmpty()   (모두 g_OtomoContainerOverride 사용)
+
+  - 음식 부패 진행도 API:
+      GetItemSlotCorruption(containerIdx, slotIdx)
+      SetItemSlotCorruption(containerIdx, slotIdx, value)
+      (기존 ItemSlotAt 체인 그대로 재사용)
+
+  - 장비 Dynamic Item Data API (raw 객체 주소 인자):
+      GetDynamicDurability(addr)
+      GetDynamicMaxDurability(addr)
+      SetDynamicDurability(addr, value)
+      GetDynamicRemainingBullets(addr)
+      SetDynamicRemainingBullets(addr, value)
+
+[3-3] Project/Cheats/MemoryCheats/PalCheats.cpp
+  - ResolveContainer(source) 헬퍼 추가:
+      source==0 → GetLocalPalContainer()  (Pal Box)
+      source==1 → GetOtomoContainerOverride()  (Party)
+  - Tick() 첫머리에서 매 프레임 SetOtomoContainerOverride(cfg.OtomoContainerAddress)
+    를 호출해 UI 입력값을 SDK 에 반영.
+  - 모든 SDK 호출을 *In(container, slot) 폼으로 교체 → Source 분기에 따라
+    동일 코드가 Box / Party 양쪽에 동작.
+
+[3-4] Project/Cheats/MemoryCheats/InventoryCheats.cpp
+  - bFreezeFoodFreshness 처리 추가:
+      SetItemSlotCorruption(SelectedContainerIdx, SelectedSlotIndex, 0.0f)
+  - bFreezeAllFoodFreshness 처리 추가:
+      for s in [0..63): SetItemSlotCorruption(SelectedContainerIdx, s, 0.0f)
+      (out-of-range / 빈 슬롯은 SDK 가 자동으로 false 반환)
+  - StackCount 강제 기능은 그대로 유지.
+
+[3-5] Project/Cheats/MemoryCheats/ItemDurabilityCheats.{h,cpp}  ← 신규
+  - Tick() 에서 Menu::Config.DynamicItemDataAddress (uintptr_t) 가 0 이 아니면:
+      bForceMaxDurability:
+        mx = GetDynamicMaxDurability(addr);
+        if (mx > 0) SetDynamicDurability(addr, mx);   // Max 클램프
+      bForceInfiniteBullets:
+        SetDynamicRemainingBullets(addr, TargetBullets)
+  - Armor / Weapon 모두 동일 +0x78/+0x84 레이아웃이라 클래스 분기 없음.
+
+[3-6] Project/GUI/Menu.{h,cpp}
+  - Settings 구조체 확장:
+      [Pals]
+        int       PalSource             = 0  (0=Box, 1=Party)
+        uintptr_t OtomoContainerAddress = 0
+      [Inventory · Freshness]
+        bool bFreezeFoodFreshness     = false  (선택 슬롯)
+        bool bFreezeAllFoodFreshness  = false  (컨테이너 일괄)
+      [Inventory · Durability/Bullets]
+        uintptr_t DynamicItemDataAddress = 0
+        bool      bForceMaxDurability    = false
+        bool      bForceInfiniteBullets  = false
+        int       TargetBullets          = 999
+
+  - Menu.cpp 변경:
+      DrawPalsTab 재작성:
+        Source 라디오 (Pal Box / Party (Otomo, manual))
+        Party 선택 시 hex InputScalar("%llX", CharsHexadecimal)
+        container = (PalSource==1) ? OtomoContainerAddress
+                                   : GetLocalPalContainer()
+        slotCount = GetSlotCountIn(container) — Box/Party 통일
+        Live Stats / Toggles 모두 *In(container, slot, ...) 호출
+      DrawInventoryTab 재구성 (3 섹션):
+        ① Target Slot (Container/Slot Index 입력)
+        ② Stack Count (기존 기능)
+        ③ Food Freshness (Freeze Selected Slot / Freeze ALL Slots in Container
+                          + 라이브 Corruption 표시)
+        ④ Equipment Durability / Bullets (manual hex)
+           Dynamic Item Data Addr 입력 + Force Durability=Max +
+           Force Remaining Bullets + InputInt
+           + 라이브 Durability / MaxDurability / Bullets 표시
+
+[3-7] Project/Core/HackMain.cpp
+  - include "Cheats/MemoryCheats/ItemDurabilityCheats.h" 추가
+  - MainLoop 에 ItemDurabilityCheats::Tick(); 호출 추가
+  - PalCheats / InventoryCheats 호출은 기존 위치 유지 (Tick 내부 로직만 확장)
+
+[3-8] Project/CMakeLists.txt
+  - Cheats/MemoryCheats/ItemDurabilityCheats.cpp 등록
+
+
+[4] 안전성/안티치트 고려
+───────────────────────────────────────────────────────────────────────────────
+  - 신규 모든 setter 는 기존 WriteAt<T>() 흐름(IsBadWritePtr 가드 후 raw write)
+    그대로 사용. 추가적인 메모리 권한 변경 없음.
+
+  - Otomo 컨테이너 / Dynamic Item Data 객체 주소는 사용자가 잘못 입력하면
+    IsBadWritePtr 가 false 를 반환해 setter 가 무사 실패 → 크래시 회피.
+    단, 게임이 해당 객체를 해제(파기)한 뒤에도 주소가 유효해 보이는 경우
+    (use-after-free) 가 이론적으로 가능하므로, UI 라이브 표시값이 명백히
+    이상하면(Durability 가 NaN 등) 토글을 끄고 주소를 재확보할 것.
+
+  - bFreezeAllFoodFreshness 의 슬롯 순회 상한(64)은 일반 컨테이너 크기에
+    여유 있게 설정한 값. 실제로는 SDK 의 SlotArray.Num 을 읽어 동적으로
+    잡아도 되지만 매 프레임 호출되는 경로라 고정 상한이 단순/빠름.
+
+  - CorruptionProgressValue 와 Durability 모두 RepNotify 멤버이므로
+    서버 권위 모드(공식 서버)에서는 다음 OnRep 시 되돌려질 수 있음.
+    솔로/전용 서버 환경에서 의도된 동작이며, 멀티 서버 호환은 Track 2
+    함수 후킹 마이그레이션 영역.
+
+
+[5] 향후 작업 / TODO
+───────────────────────────────────────────────────────────────────────────────
+  - Otomo 컨테이너 자동 발견:
+    Track 2 에 작은 AOB 후크 추가 → UPalOtomoHolderComponentBase 의 한
+    멤버 함수(Initialize / AddOtomoHandleToFreeSlot / OnRep_CharacterContainer
+    등)에 진입 시 this+0x110 을 1 회 캡처해
+    SDK::SetOtomoContainerOverride(this+0x110) 에 자동 등록.
+    이렇게 되면 UI 의 hex 입력란은 fallback / debug 용도로 남음.
+
+  - GUObjectArray 후크로 TWeakObjectPtr 자동 해소:
+    FChunkedFixedUObjectArray 의 베이스 주소(또는 ObjObjects 멤버) AOB 시그
+    니처를 잡아 등록하면 UPalItemSlot.DynamicItemData → 객체 주소 자동 변환
+    가능. 그 시점에 Equipment Durability 도 "Container/Slot Index" 만으로
+    동작 → manual hex 입력 제거.
+
+  - 컨테이너 enumeration UI:
+    InventoryMultiHelper.Containers 의 개수와 각 컨테이너의 첫 슬롯 정보를
+    표로 표시 → 사용자가 메인 인벤토리 / 단축 슬롯 / 본거지 창고 등을
+    인덱스로 식별하기 쉬워짐.
+
+  - Pal 슬롯 식별:
+    UPalIndividualCharacterSaveParameter::CharacterID (FName, +0x000) 을
+    읽어 슬롯별 라벨로 표시. FName lookup 헬퍼가 필요.
+
+  - 2026-05-06 리포트의 GWorld AOB 시그니처화 (P1-6) 는 여전히 유효.
+
+  - Inventory 일괄 동결 슬롯 상한(64) 동적화:
+    GetInventoryContainerAt + ItemContainer::ItemSlotArray_Num 으로 정확한
+    슬롯 수를 잡아 순회. 비용은 동일.
+
+
+[6] 검증 체크리스트 (실행 시점에 확인할 항목)
+───────────────────────────────────────────────────────────────────────────────
+  [ ] DLL 인젝션 → INSERT → 메뉴 정상 표시
+  [ ] [Pals] 탭 — Source 라디오 "Pal Box" 선택 시 기존과 동일하게 SlotCount /
+      Live Stats 표시 + 토글 동작
+  [ ] [Pals] 탭 — Source 라디오 "Party (Otomo, manual)" 선택 시
+      Otomo Container Addr hex 입력란 노출
+  [ ] [Pals] 탭 — Otomo 주소 미입력 시 노란색 "Otomo 컨테이너 주소가
+      유효하지 않습니다" 메시지 출력
+  [ ] [Pals] 탭 — Cheat Engine 으로 잡은 UPalIndividualCharacterContainer
+      주소 입력 → SlotCount 가 파티 슬롯 수(보통 5)로 표시 + 슬롯 변경 시
+      Live Stats 가 각 파티 팰의 값과 일치
+  [ ] [Pals] 탭 — Party 모드에서 Pal God / Max Talents / Force Level 적용
+      후 게임 UI 에서 동일하게 반영
+  [ ] [Inventory] 탭 — Container Index 0, Slot Index 0 에서 음식 1 개를
+      두고 Freeze Selected Slot ON → Corruption 값이 0.000 으로 고정
+  [ ] [Inventory] 탭 — Freeze ALL Slots in Container ON → 인벤토리 전체
+      음식이 부패하지 않음
+  [ ] [Inventory] 탭 — Dynamic Item Data Addr 미입력 시 "Dynamic item data
+      not set." 회색 메시지
+  [ ] [Inventory] 탭 — Cheat Engine 으로 잡은 무기 Dynamic Data 주소 입력 →
+      Live Durability / MaxDurability / Bullets 가 실제 값과 일치
+  [ ] [Inventory] 탭 — Force Durability=Max ON → 장비 사용 시 내구도가
+      줄어들지 않음(다음 프레임에 Max 로 복구)
+  [ ] [Inventory] 탭 — Force Remaining Bullets ON + InputInt = 999 →
+      탄창이 999 로 유지(사격 시 다음 프레임에 복구)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 끝.
+═══════════════════════════════════════════════════════════════════════════════

@@ -32,6 +32,17 @@ namespace Menu
         int  SelectedSlotIndex     = 0;
         int  TargetStackCount      = 9999;
 
+        // 음식 부패 진행도(0=신선) 동결
+        bool bFreezeFoodFreshness     = false; // 선택된 단일 슬롯
+        bool bFreezeAllFoodFreshness  = false; // 컨테이너 전체 슬롯 0~63
+
+        // 장비 내구도 / 무기 잔탄 — UPalDynamicItemDataBase 인스턴스 hex 주소.
+        // TWeakObjectPtr 해소가 SDK 만으로는 어려워 사용자가 한 번 잡아 입력.
+        uintptr_t DynamicItemDataAddress = 0;
+        bool      bForceMaxDurability    = false;  // Durability = MaxDurability
+        bool      bForceInfiniteBullets  = false;  // RemainingBullets = TargetBullets
+        int       TargetBullets          = 999;
+
         // ── 신규: 스탯 부스트 (StatBoost.cpp) ──
         bool    bMaxSanity   = false;   // SanityValue = 100
         bool    bInfiniteMP  = false;   // MP = 1e9 (FFixedPoint64)
@@ -48,6 +59,13 @@ namespace Menu
         int  TargetArenaRP    = 9999;
 
         // ── 신규: 보유 팰 (PalCheats.cpp) ──
+        // PalSource : 0 = Pal Box (PalStorage 체인) , 1 = Otomo/Party (수동 주소)
+        int       PalSource             = 0;
+        // Otomo(데려다니는 팰) 컨테이너 베이스. SDK 덤프에 직접 멤버 오프셋이
+        // 없어 사용자가 한 번 Cheat Engine 등으로 잡아 입력해 줘야 한다.
+        // 0 이면 Party 모드 비활성.
+        uintptr_t OtomoContainerAddress = 0;
+
         int     SelectedPalSlot   = 0;
         bool    bPalGodMode       = false;   // HP = 1e9
         bool    bPalMaxSanity     = false;

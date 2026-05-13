@@ -92,7 +92,18 @@ namespace SDK::Offsets
     }
 
     namespace ItemSlot {
-        constexpr uintptr_t StackCount = 0x154; // int32
+        constexpr uintptr_t StackCount              = 0x154; // int32
+        constexpr uintptr_t CorruptionProgressValue = 0x158; // float (음식 부패 진행도, 0=신선)
+        // DynamicItemData(0x190)는 TWeakObjectPtr → GUObjectArray 없이는 자동 해소 불가.
+        // 내구도/잔탄은 별도 Dynamic Item Data 객체 주소를 직접 받는다(아래 namespace).
+    }
+
+    // UPalDynamicArmorItemDataBase / UPalDynamicWeaponItemDataBase 공통 레이아웃.
+    // 둘 다 UPalDynamicItemDataBase(0x70) 위에 +0x08 패딩 후 멤버 시작.
+    namespace DynamicItemData {
+        constexpr uintptr_t Durability       = 0x78; // float
+        constexpr uintptr_t MaxDurability    = 0x7C; // float
+        constexpr uintptr_t RemainingBullets = 0x84; // int32 (Weapon 전용)
     }
 
     // ───── 보유 팰 (Pal Box / Storage) 체인 ─────

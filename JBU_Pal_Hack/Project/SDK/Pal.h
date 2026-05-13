@@ -85,18 +85,80 @@ namespace SDK
     int  GetItemSlotStackCount(int containerIndex, int slotIndex);
     bool SetItemSlotStackCount(int containerIndex, int slotIndex, int value);
 
-    // ───── 보유 팰 (Pal Box / Storage) ─────
-    // 체인: PlayerState → PalStorage → TargetContainer → SlotArray[index]
-    //       → ReplicateIndividualParameter → (+0x388 = SaveParameter)
+    // 음식 부패 진행도(0.0=신선, 1.0=부패 완료). 자동 체인 사용 가능.
+    float GetItemSlotCorruption(int containerIndex, int slotIndex);
+    bool  SetItemSlotCorruption(int containerIndex, int slotIndex, float value);
+
+    // ───── 장비 Dynamic Item Data (수동 hex 주소) ─────
+    // UPalItemSlot.DynamicItemData 는 TWeakObjectPtr 라 GUObjectArray 없이는
+    // 자동 해소 불가. 사용자가 한 번 Cheat Engine 등으로 잡아 등록한 객체에
+    // 직접 R/W 한다. (Armor / Weapon 공통 +0x78 Durability, +0x84 Bullets)
+    float GetDynamicDurability(uintptr_t dynamicDataAddr);
+    float GetDynamicMaxDurability(uintptr_t dynamicDataAddr);
+    bool  SetDynamicDurability(uintptr_t dynamicDataAddr, float value);
+    int   GetDynamicRemainingBullets(uintptr_t dynamicDataAddr);
+    bool  SetDynamicRemainingBullets(uintptr_t dynamicDataAddr, int value);
+
+    // ───── 보유 팰 (Pal Box / Storage / Otomo party / 임의 컨테이너) ─────
+    // 모든 헬퍼는 "컨테이너 베이스 = UPalIndividualCharacterContainer*" 위에서 동작.
+    // 박스/파티/베이스캠프 어디 컨테이너든 같은 SlotArray@0x80 레이아웃이므로
+    // 컨테이너 베이스만 알면 통일된 코드로 변조 가능.
+    //
+    //  - GetLocalPalContainer()       : PlayerState → PalStorage → TargetContainer
+    //                                   (Pal Box, 기본값)
+    //  - SetOtomoContainerOverride()  : Otomo(파티) 또는 임의 컨테이너 주소를 등록.
+    //                                   설정되어 있으면 *FromOverride() / *AtParty()
+    //                                   계열 헬퍼가 이 베이스를 사용.
+    //
+    // 체인: <Container> → SlotArray[index] → ReplicateIndividualParameter
+    //       → (+0x388 = SaveParameter)
     uintptr_t GetLocalPalStorage();
     uintptr_t GetLocalPalContainer();
-    int       GetPalSlotCount();                          // 컨테이너 총 슬롯 수 (빈 슬롯 포함)
-    uintptr_t GetPalSlotAt(int slotIndex);                // UPalIndividualCharacterSlot*
-    uintptr_t GetPalIndividualParameterAt(int slotIndex); // UPalIndividualCharacterParameter*
+
+    // 외부에서 잡아낸 (또는 후속 AOB 후크가 캡처한) Otomo/임의 컨테이너의
+    // 절대 주소를 등록한다. 0 을 넣으면 비활성화.
+    void      SetOtomoContainerOverride(uintptr_t containerBase);
+    uintptr_t GetOtomoContainerOverride();
+
+    // 컨테이너 베이스에서 슬롯/파라미터 추출 (일반화된 lower-level API).
+    int       GetSlotCountIn(uintptr_t container);
+    uintptr_t GetSlotInContainer(uintptr_t container, int slotIndex);
+    uintptr_t GetIndividualParameterInContainer(uintptr_t container, int slotIndex);
+
+    // Pal Box (기본) 편의 wrapper — 기존 호출 호환.
+    int       GetPalSlotCount();
+    uintptr_t GetPalSlotAt(int slotIndex);
+    uintptr_t GetPalIndividualParameterAt(int slotIndex);
     bool      IsPalSlotEmpty(int slotIndex);
 
-    // 보유 팰 슬롯의 SaveParameter 멤버 R/W.
-    // 모든 함수는 ReplicateIndividualParameter 가 nullptr 이면 실패(빈 슬롯).
+    // Otomo(파티) 편의 wrapper — Override 미설정 시 0/false.
+    int       GetPartySlotCount();
+    uintptr_t GetPartySlotAt(int slotIndex);
+    uintptr_t GetPartyIndividualParameterAt(int slotIndex);
+    bool      IsPartySlotEmpty(int slotIndex);
+
+    // 보유 팰 슬롯의 SaveParameter 멤버 R/W. (Pal Box / Party 어디든 같은 함수;
+    // container 베이스를 명시적으로 받는 *In() 폼과, 박스/파티 wrapper 형태로 노출.)
+
+    // ── 일반화된 *In() (container-base 명시) ──
+    int     GetPalLevelIn(uintptr_t container, int slot);
+    bool    SetPalLevelIn(uintptr_t container, int slot, uint8_t value);
+    int64_t GetPalExpIn(uintptr_t container, int slot);
+    bool    SetPalExpIn(uintptr_t container, int slot, int64_t value);
+    int64_t GetPalHPIn(uintptr_t container, int slot);
+    bool    SetPalHPIn(uintptr_t container, int slot, int64_t value);
+    int64_t GetPalMaxHPIn(uintptr_t container, int slot);
+    int     GetPalTalentHPIn(uintptr_t container, int slot);
+    int     GetPalTalentMeleeIn(uintptr_t container, int slot);
+    int     GetPalTalentShotIn(uintptr_t container, int slot);
+    int     GetPalTalentDefenseIn(uintptr_t container, int slot);
+    bool    SetPalTalentsIn(uintptr_t container, int slot, uint8_t hp, uint8_t melee, uint8_t shot, uint8_t def);
+    float   GetPalSanityIn(uintptr_t container, int slot);
+    bool    SetPalSanityIn(uintptr_t container, int slot, float value);
+    int64_t GetPalMPIn(uintptr_t container, int slot);
+    bool    SetPalMPIn(uintptr_t container, int slot, int64_t value);
+
+    // ── Pal Box wrapper (기존 시그니처 그대로 유지) ──
     int     GetPalLevel(int slotIndex);
     bool    SetPalLevel(int slotIndex, uint8_t value);
     int64_t GetPalExp(int slotIndex);
