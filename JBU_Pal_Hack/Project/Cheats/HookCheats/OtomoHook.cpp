@@ -16,37 +16,35 @@ namespace OtomoHook
     using OtomoCallbackFn = void(__fastcall*)(void* self);
     static OtomoCallbackFn oOtomoCallback = nullptr;
 
-    // 이미 캡쳐했으면 더 이상 작업 안 함 (atomic — UE 메인 스레드에서 호출).
-    static std::atomic<bool> g_captured{false};
-
     // UPalOtomoHolderComponentBase::CharacterContainer 멤버 오프셋 (Reference/SDK
     // Pal_classes.hpp:48527).
     static constexpr uintptr_t kCharacterContainerOffset = 0x110;
 
     // 로컬 PlayerState 의 OtomoCharacterContainerId(16 B) 와 캡쳐된 컨테이너의
-    // ID(+0x38, 16 B) 가 일치하는지 검증. 로컬 ID 가 0/미동기화면 그대로 통과
-    // (솔로 / 첫 등장 시 false-negative 방지).
+    // ID(+0x38, 16 B) 가 일치하는지 strict 검증. 이전 버전은 로컬 ID 가 아직
+    // 동기화 안 됐을 때 "검증 보류 → 통과" 시켜서 NPC 트레이너 / 다른 플레이어
+    // 의 OtomoHolder 가 잘못 캡쳐되는 사고가 있었음. 지금은 정보 부족 = false
+    // 반환 → 다음 호출(=PlayerState 동기화 후)을 기다림.
     static bool MatchesLocalOtomoId(uintptr_t container)
     {
         if (!container) return false;
         const uintptr_t cIdAddr = container + SDK::Offsets::ContainerBase::ID;
         if (IsBadReadPtr((const void*)cIdAddr, SDK::Offsets::ContainerBase::ID_Size)) return false;
 
-        uintptr_t ps = SDK::GetLocalPlayerState();
-        if (!ps) return true; // PlayerState 아직 — 검증 보류, 일단 등록 허용
+        const uintptr_t ps = SDK::GetLocalPlayerState();
+        if (!ps) return false; // PlayerState 미동기화 → 다음 호출 대기
 
-        uintptr_t otomoData = 0;
         const uintptr_t odAddr = ps + SDK::Offsets::PlayerState::OtomoData;
-        if (IsBadReadPtr((const void*)odAddr, sizeof(uintptr_t))) return true;
-        otomoData = *(uintptr_t*)odAddr;
-        if (!otomoData) return true;
+        if (IsBadReadPtr((const void*)odAddr, sizeof(uintptr_t))) return false;
+        const uintptr_t otomoData = *(uintptr_t*)odAddr;
+        if (!otomoData) return false; // OtomoData 미동기화 → 다음 호출 대기
 
         const uintptr_t localIdAddr = otomoData + SDK::Offsets::PlayerOtomoData::OtomoCharacterContainerId;
-        if (IsBadReadPtr((const void*)localIdAddr, SDK::Offsets::ContainerBase::ID_Size)) return true;
+        if (IsBadReadPtr((const void*)localIdAddr, SDK::Offsets::ContainerBase::ID_Size)) return false;
 
         const uint64_t llo = *(const uint64_t*)(localIdAddr + 0x0);
         const uint64_t lhi = *(const uint64_t*)(localIdAddr + 0x8);
-        if (llo == 0 && lhi == 0) return true; // 로컬 ID 미발급 — 검증 보류
+        if (llo == 0 && lhi == 0) return false; // 로컬 ID 아직 미발급 → 다음 호출 대기
 
         const uint64_t clo = *(const uint64_t*)(cIdAddr + 0x0);
         const uint64_t chi = *(const uint64_t*)(cIdAddr + 0x8);
@@ -59,7 +57,6 @@ namespace OtomoHook
         // 그 다음 this+0x110 을 읽으면 가장 신선한 값을 잡을 수 있음.
         if (oOtomoCallback) oOtomoCallback(self);
 
-        if (g_captured.load(std::memory_order_acquire)) return;
         if (!self) return;
 
         const uintptr_t ccAddr = reinterpret_cast<uintptr_t>(self) + kCharacterContainerOffset;
@@ -67,11 +64,13 @@ namespace OtomoHook
         const uintptr_t container = *(uintptr_t*)ccAddr;
         if (!container) return; // 아직 미생성 — 다음 호출 시 재시도
 
-        // 멀티 안전: 로컬 OtomoId 와 일치하는 컨테이너만 등록.
+        // 멀티 안전: 로컬 OtomoId 와 일치하는 컨테이너만 등록. ID 미동기화 시
+        // 잘못된 캡쳐 대신 deferral. g_captured 플래그 없이 매 호출 검증 →
+        // 캐릭터 전환 / 세션 재로드 시 자동으로 새 컨테이너로 갱신.
         if (!MatchesLocalOtomoId(container)) return;
 
+        // 이미 같은 값이면 atomic store 는 사실상 no-op, 다른 값이면 갱신.
         SDK::SetOtomoContainerOverride(container);
-        g_captured.store(true, std::memory_order_release);
     }
 
     bool Install()

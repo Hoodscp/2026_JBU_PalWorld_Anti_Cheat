@@ -153,6 +153,19 @@ namespace Menu
                 Config.OtomoContainerAddress = captured;
                 ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f),
                                    "Captured: 0x%llX", (unsigned long long)captured);
+
+                // 잡힌 컨테이너의 ContainerId(+0x38, 16 byte) 표시. 사용자는
+                // 이걸 CE 등으로 잡은 로컬 OtomoCharacterContainerId 와 직접
+                // 비교해 "내 컨테이너가 맞는지" 검증 가능. 두 값이 다르면
+                // 다른 OtomoHolder 가 잘못 잡힌 것 → Clear 후 재시도.
+                uint64_t idLo = 0, idHi = 0;
+                if (!IsBadReadPtr((const void*)(captured + 0x38), 0x10)) {
+                    idLo = *(const uint64_t*)(captured + 0x38);
+                    idHi = *(const uint64_t*)(captured + 0x40);
+                }
+                ImGui::TextDisabled("ContainerId: %016llX %016llX",
+                                    (unsigned long long)idHi,
+                                    (unsigned long long)idLo);
             } else {
                 ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f),
                                    "Waiting for OtomoHook capture...");
