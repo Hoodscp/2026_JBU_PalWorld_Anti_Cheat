@@ -7,21 +7,21 @@ namespace ItemDurabilityCheats
     void Tick()
     {
         const auto& cfg = Menu::Config;
-        const uintptr_t addr = cfg.DynamicItemDataAddress;
-        if (!addr) return; // 미등록 → 비활성
+        const int   ci  = cfg.SelectedContainerIdx;
+        const int   si  = cfg.SelectedSlotIndex;
 
         if (cfg.bForceMaxDurability) {
-            // MaxDurability 를 읽어 그 값으로 Durability 를 채움.
-            // (단순히 큰 상수를 쓰면 일부 UI 표시가 깨질 수 있어 Max 와 동기화.)
-            float mx = SDK::GetDynamicMaxDurability(addr);
+            // MaxDurability 를 읽어 Durability 에 동기화. 슬롯이 비었거나
+            // GUObjectArray 미해소면 -1 / 0 → setter 가 무사 실패.
+            float mx = SDK::GetItemMaxDurability(ci, si);
             if (mx > 0.0f) {
-                SDK::SetDynamicDurability(addr, mx);
+                SDK::SetItemDurability(ci, si, mx);
             }
         }
         if (cfg.bForceInfiniteBullets) {
             int v = cfg.TargetBullets;
             if (v < 0) v = 0;
-            SDK::SetDynamicRemainingBullets(addr, v);
+            SDK::SetItemRemainingBullets(ci, si, v);
         }
     }
 }

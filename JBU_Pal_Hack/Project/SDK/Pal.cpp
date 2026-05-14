@@ -393,35 +393,88 @@ namespace SDK
         return WriteAt<float>(slot + Offsets::ItemSlot::CorruptionProgressValue, value);
     }
 
-    // ── 장비 Dynamic Item Data (수동 hex 주소) ──
-    float GetDynamicDurability(uintptr_t addr)
+    // ── UE5 TWeakObjectPtr 해소 ──
+    uintptr_t ResolveWeakObjectIndex(int32_t index, int32_t serial)
     {
-        if (!addr) return -1.0f;
-        return Scanner::ReadMemory<float>(addr + Offsets::DynamicItemData::Durability);
+        if (index < 0) return 0;
+        uintptr_t modBase = (uintptr_t)GetModuleHandle(NULL);
+        uintptr_t guoa    = modBase + Offsets::Module::GUObjectArray;
+        if (!Offsets::Module::GUObjectArray) return 0;
+
+        // FUObjectArray → FChunkedFixedUObjectArray (ObjObjects)
+        const uintptr_t objObjects = guoa + Offsets::UObjectArray::ObjObjects;
+
+        int32_t numElements = Scanner::ReadMemory<int32_t>(objObjects + Offsets::UObjectArray::NumElements);
+        if (index >= numElements) return 0;
+
+        uintptr_t chunkArray = Scanner::ReadMemory<uintptr_t>(objObjects + Offsets::UObjectArray::ChunkArrayPtr);
+        if (!chunkArray) return 0;
+
+        const int chunkIdx   = index / Offsets::UObjectArray::NumPerChunk;
+        const int withinIdx  = index % Offsets::UObjectArray::NumPerChunk;
+
+        uintptr_t chunkBase = Scanner::ReadMemory<uintptr_t>(chunkArray + (uintptr_t)chunkIdx * sizeof(uintptr_t));
+        if (!chunkBase) return 0;
+
+        const uintptr_t itemAddr = chunkBase + (uintptr_t)withinIdx * Offsets::UObjectArray::Item_Size;
+
+        // Serial 검증은 옵션. serial==0 이면 신뢰하고 건너뜀.
+        if (serial != 0) {
+            int32_t storedSerial = Scanner::ReadMemory<int32_t>(itemAddr + Offsets::UObjectArray::Item_SerialNumber);
+            if (storedSerial != serial) return 0;
+        }
+        return Scanner::ReadMemory<uintptr_t>(itemAddr + Offsets::UObjectArray::Item_Object);
     }
 
-    float GetDynamicMaxDurability(uintptr_t addr)
+    uintptr_t ResolveWeakObjectPtr(uintptr_t weakPtrAddr)
     {
-        if (!addr) return -1.0f;
-        return Scanner::ReadMemory<float>(addr + Offsets::DynamicItemData::MaxDurability);
+        if (!weakPtrAddr) return 0;
+        int32_t index  = Scanner::ReadMemory<int32_t>(weakPtrAddr + Offsets::WeakObjectPtr::ObjectIndex);
+        int32_t serial = Scanner::ReadMemory<int32_t>(weakPtrAddr + Offsets::WeakObjectPtr::ObjectSerialNumber);
+        return ResolveWeakObjectIndex(index, serial);
     }
 
-    bool SetDynamicDurability(uintptr_t addr, float value)
+    // ── 장비 Dynamic Item Data (슬롯 자동 해소) ──
+    uintptr_t GetItemSlotDynamicData(int containerIndex, int slotIndex)
     {
-        if (!addr) return false;
-        return WriteAt<float>(addr + Offsets::DynamicItemData::Durability, value);
+        uintptr_t slot = GetItemSlotAt(containerIndex, slotIndex);
+        if (!slot) return 0;
+        return ResolveWeakObjectPtr(slot + Offsets::ItemSlot::DynamicItemData_WeakPtr);
     }
 
-    int GetDynamicRemainingBullets(uintptr_t addr)
+    float GetItemDurability(int containerIndex, int slotIndex)
     {
-        if (!addr) return -1;
-        return Scanner::ReadMemory<int32_t>(addr + Offsets::DynamicItemData::RemainingBullets);
+        uintptr_t data = GetItemSlotDynamicData(containerIndex, slotIndex);
+        if (!data) return -1.0f;
+        return Scanner::ReadMemory<float>(data + Offsets::DynamicItemData::Durability);
     }
 
-    bool SetDynamicRemainingBullets(uintptr_t addr, int value)
+    float GetItemMaxDurability(int containerIndex, int slotIndex)
     {
-        if (!addr) return false;
-        return WriteAt<int32_t>(addr + Offsets::DynamicItemData::RemainingBullets, value);
+        uintptr_t data = GetItemSlotDynamicData(containerIndex, slotIndex);
+        if (!data) return -1.0f;
+        return Scanner::ReadMemory<float>(data + Offsets::DynamicItemData::MaxDurability);
+    }
+
+    bool SetItemDurability(int containerIndex, int slotIndex, float value)
+    {
+        uintptr_t data = GetItemSlotDynamicData(containerIndex, slotIndex);
+        if (!data) return false;
+        return WriteAt<float>(data + Offsets::DynamicItemData::Durability, value);
+    }
+
+    int GetItemRemainingBullets(int containerIndex, int slotIndex)
+    {
+        uintptr_t data = GetItemSlotDynamicData(containerIndex, slotIndex);
+        if (!data) return -1;
+        return Scanner::ReadMemory<int32_t>(data + Offsets::DynamicItemData::RemainingBullets);
+    }
+
+    bool SetItemRemainingBullets(int containerIndex, int slotIndex, int value)
+    {
+        uintptr_t data = GetItemSlotDynamicData(containerIndex, slotIndex);
+        if (!data) return false;
+        return WriteAt<int32_t>(data + Offsets::DynamicItemData::RemainingBullets, value);
     }
 
     // ───── 보유 팰 (Box / Otomo / 임의 컨테이너) ─────
@@ -451,6 +504,71 @@ namespace SDK
     uintptr_t GetOtomoContainerOverride()
     {
         return g_OtomoContainerOverride;
+    }
+
+    // ── Otomo 컨테이너 자동 탐색 ──
+    // 동작 흐름:
+    //   1) PlayerState → OtomoData(+0x5C8) → OtomoCharacterContainerId(+0x28, 16B)
+    //   2) GUObjectArray 순회: 각 객체 +0x38 (UPalContainerBase::ID) 와 16B 비교
+    //   3) 후보 발견 시 sanity check: SlotArray.Num(+0x88) 이 1~256 범위 → 합격
+    //   4) Override 캐시에 등록 후 주소 반환
+    //
+    // 비용: 보통 5만~20만 객체. 1 회 호출만 비싸고 결과는 캐시되므로 매 프레임
+    //       호출하지 않는다. UI 토글/버튼/PalCheats::Tick 의 폴백 경로에서만 호출.
+    uintptr_t AutoFindOtomoContainer()
+    {
+        if (!Offsets::Module::GUObjectArray) return 0;
+
+        // 1) Otomo ContainerId 16B 읽기
+        uintptr_t ps = GetLocalPlayerState();
+        if (!ps) return 0;
+        uintptr_t otomoData = Scanner::ReadMemory<uintptr_t>(ps + Offsets::PlayerState::OtomoData);
+        if (!otomoData) return 0;
+
+        const uintptr_t idAddr = otomoData + Offsets::PlayerOtomoData::OtomoCharacterContainerId;
+        if (IsBadReadPtr((const void*)idAddr, Offsets::ContainerBase::ID_Size)) return 0;
+        uint64_t targetIdLo = *(const uint64_t*)(idAddr + 0x0);
+        uint64_t targetIdHi = *(const uint64_t*)(idAddr + 0x8);
+        // 전부 0 인 ID 는 false-positive 위험 너무 큼 → 거부.
+        if (targetIdLo == 0 && targetIdHi == 0) return 0;
+
+        // 2) GUObjectArray 순회 준비
+        uintptr_t modBase    = (uintptr_t)GetModuleHandle(NULL);
+        uintptr_t objObjects = modBase + Offsets::Module::GUObjectArray + Offsets::UObjectArray::ObjObjects;
+        int32_t   numElements = Scanner::ReadMemory<int32_t>(objObjects + Offsets::UObjectArray::NumElements);
+        uintptr_t chunkArray  = Scanner::ReadMemory<uintptr_t>(objObjects + Offsets::UObjectArray::ChunkArrayPtr);
+        if (!chunkArray || numElements <= 0) return 0;
+        // 비정상적으로 큰 값 방어 (상한 200만).
+        if (numElements > 2'000'000) numElements = 2'000'000;
+
+        for (int32_t i = 0; i < numElements; ++i)
+        {
+            const int chunkIdx  = i / Offsets::UObjectArray::NumPerChunk;
+            const int withinIdx = i % Offsets::UObjectArray::NumPerChunk;
+
+            uintptr_t chunkBase = Scanner::ReadMemory<uintptr_t>(chunkArray + (uintptr_t)chunkIdx * sizeof(uintptr_t));
+            if (!chunkBase) continue;
+
+            uintptr_t obj = Scanner::ReadMemory<uintptr_t>(
+                chunkBase + (uintptr_t)withinIdx * Offsets::UObjectArray::Item_Size);
+            if (!obj) continue;
+
+            // ID 비교 (16 byte). IsBadReadPtr 한 번으로 안전 확인 후 8+8.
+            const uintptr_t objIdAddr = obj + Offsets::ContainerBase::ID;
+            if (IsBadReadPtr((const void*)objIdAddr, Offsets::ContainerBase::ID_Size)) continue;
+            if (*(const uint64_t*)(objIdAddr + 0x0) != targetIdLo) continue;
+            if (*(const uint64_t*)(objIdAddr + 0x8) != targetIdHi) continue;
+
+            // 후보 발견. SlotArray.Num sanity check.
+            int32_t num = Scanner::ReadMemory<int32_t>(obj + Offsets::PalCharContainer::SlotArray_Num);
+            if (num <= 0 || num > 256) continue;
+            uintptr_t arrData = Scanner::ReadMemory<uintptr_t>(obj + Offsets::PalCharContainer::SlotArray_Data);
+            if (!arrData) continue;
+
+            SetOtomoContainerOverride(obj);
+            return obj;
+        }
+        return 0;
     }
 
     // ── 일반화된 컨테이너 → Slot / IndividualParameter ──

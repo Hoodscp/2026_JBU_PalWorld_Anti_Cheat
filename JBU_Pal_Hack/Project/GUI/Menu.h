@@ -36,12 +36,11 @@ namespace Menu
         bool bFreezeFoodFreshness     = false; // 선택된 단일 슬롯
         bool bFreezeAllFoodFreshness  = false; // 컨테이너 전체 슬롯 0~63
 
-        // 장비 내구도 / 무기 잔탄 — UPalDynamicItemDataBase 인스턴스 hex 주소.
-        // TWeakObjectPtr 해소가 SDK 만으로는 어려워 사용자가 한 번 잡아 입력.
-        uintptr_t DynamicItemDataAddress = 0;
-        bool      bForceMaxDurability    = false;  // Durability = MaxDurability
-        bool      bForceInfiniteBullets  = false;  // RemainingBullets = TargetBullets
-        int       TargetBullets          = 999;
+        // 장비 내구도 / 무기 잔탄 — 선택된 Container/Slot 슬롯의 DynamicItemData
+        // 를 GUObjectArray 로 해소해 자동 접근. manual hex 입력은 제거됨.
+        bool bForceMaxDurability    = false;  // Durability = MaxDurability
+        bool bForceInfiniteBullets  = false;  // RemainingBullets = TargetBullets
+        int  TargetBullets          = 999;
 
         // ── 신규: 스탯 부스트 (StatBoost.cpp) ──
         bool    bMaxSanity   = false;   // SanityValue = 100

@@ -89,15 +89,26 @@ namespace SDK
     float GetItemSlotCorruption(int containerIndex, int slotIndex);
     bool  SetItemSlotCorruption(int containerIndex, int slotIndex, float value);
 
-    // ───── 장비 Dynamic Item Data (수동 hex 주소) ─────
-    // UPalItemSlot.DynamicItemData 는 TWeakObjectPtr 라 GUObjectArray 없이는
-    // 자동 해소 불가. 사용자가 한 번 Cheat Engine 등으로 잡아 등록한 객체에
-    // 직접 R/W 한다. (Armor / Weapon 공통 +0x78 Durability, +0x84 Bullets)
-    float GetDynamicDurability(uintptr_t dynamicDataAddr);
-    float GetDynamicMaxDurability(uintptr_t dynamicDataAddr);
-    bool  SetDynamicDurability(uintptr_t dynamicDataAddr, float value);
-    int   GetDynamicRemainingBullets(uintptr_t dynamicDataAddr);
-    bool  SetDynamicRemainingBullets(uintptr_t dynamicDataAddr, int value);
+    // ───── UE5 TWeakObjectPtr 해소 ─────
+    // GUObjectArray(=FUObjectArray 전역)를 통해 FWeakObjectPtr → UObject* 변환.
+    // GUObjectArray 가 0 (Offsets::Module::GUObjectArray 미갱신) 이면 0 반환.
+    //
+    //   ResolveWeakObjectPtr(weakPtrAddr) : 8-byte FWeakObjectPtr 시작 주소
+    //                                       (예: slot + 0x190) 를 받아 객체 주소 반환.
+    //   ResolveWeakObjectIndex(index, serial=0): index/serial 분리 입력. serial==0
+    //                                       이면 직렬번호 검증을 생략.
+    uintptr_t ResolveWeakObjectPtr(uintptr_t weakPtrAddr);
+    uintptr_t ResolveWeakObjectIndex(int32_t index, int32_t serial = 0);
+
+    // ───── 장비 Dynamic Item Data (Container/Slot 자동 해소) ─────
+    // 내부적으로 슬롯의 DynamicItemData TWeakObjectPtr 를 풀어 객체 주소를 얻은
+    // 뒤 +0x78 / +0x84 멤버에 R/W. GUObjectArray 미설정 시 모두 -1 / false.
+    uintptr_t GetItemSlotDynamicData(int containerIndex, int slotIndex);
+    float     GetItemDurability(int containerIndex, int slotIndex);
+    float     GetItemMaxDurability(int containerIndex, int slotIndex);
+    bool      SetItemDurability(int containerIndex, int slotIndex, float value);
+    int       GetItemRemainingBullets(int containerIndex, int slotIndex);
+    bool      SetItemRemainingBullets(int containerIndex, int slotIndex, int value);
 
     // ───── 보유 팰 (Pal Box / Storage / Otomo party / 임의 컨테이너) ─────
     // 모든 헬퍼는 "컨테이너 베이스 = UPalIndividualCharacterContainer*" 위에서 동작.
@@ -119,6 +130,14 @@ namespace SDK
     // 절대 주소를 등록한다. 0 을 넣으면 비활성화.
     void      SetOtomoContainerOverride(uintptr_t containerBase);
     uintptr_t GetOtomoContainerOverride();
+
+    // ── 자동 탐색 ──
+    // 로컬 PlayerState 의 OtomoData 에서 OtomoCharacterContainerId(16 byte)를
+    // 읽고, GUObjectArray 를 순회해 +0x38 의 ID 가 일치하는
+    // UPalIndividualCharacterContainer 인스턴스를 찾는다.
+    // 성공 시 컨테이너 주소를 SetOtomoContainerOverride() 에 등록하고 반환,
+    // 실패 시 0 반환. GUObjectArray 미설정/PlayerState 미동기화 시 0.
+    uintptr_t AutoFindOtomoContainer();
 
     // 컨테이너 베이스에서 슬롯/파라미터 추출 (일반화된 lower-level API).
     int       GetSlotCountIn(uintptr_t container);

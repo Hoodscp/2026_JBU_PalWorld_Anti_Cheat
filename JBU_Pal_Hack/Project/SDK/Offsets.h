@@ -22,7 +22,29 @@ namespace SDK::Offsets
 {
     // ───── 모듈 베이스 (Palworld-Win64-Shipping.exe) 기준 ─────
     namespace Module {
-        constexpr uintptr_t GWorld = 0x090D3030;
+        constexpr uintptr_t GWorld        = 0x090D3030;
+        // FUObjectArray 전역. TWeakObjectPtr → UObject* 해소에 사용.
+        // 게임 패치마다 깨지므로 AOB 스캐너가 도입되기 전까지는 이 값을
+        // 수동으로 갱신해야 한다. 0 이면 weak-ptr 해소가 모두 실패하고
+        // Equipment Durability 자동 모드도 비활성 → 메뉴가 hex fallback 안내.
+        constexpr uintptr_t GUObjectArray = 0x09197040; // ← placeholder, 빌드별 갱신
+    }
+
+    // FUObjectArray / FChunkedFixedUObjectArray 내부 레이아웃 (UE5.x 공통).
+    // 일반적으로 한 게임 빌드 내내 안정적이며, GUObjectArray 베이스만 잘
+    // 잡으면 그대로 동작한다.
+    namespace UObjectArray {
+        // FUObjectArray 안에서 FChunkedFixedUObjectArray 시작 오프셋.
+        constexpr uintptr_t ObjObjects        = 0x10;
+        // FChunkedFixedUObjectArray 안의 멤버들:
+        constexpr uintptr_t ChunkArrayPtr     = 0x00; // FUObjectItem** 첫 청크들
+        constexpr uintptr_t NumElements       = 0x14; // int32
+        // FUObjectItem 레이아웃:
+        constexpr uintptr_t Item_Object       = 0x00; // UObject*
+        constexpr uintptr_t Item_SerialNumber = 0x14; // int32
+        constexpr uintptr_t Item_Size         = 0x18; // sizeof(FUObjectItem)
+        // 한 청크당 항목 수.
+        constexpr int       NumPerChunk       = 64 * 1024;
     }
 
     // ───── UE 객체 그래프 (포인터 체인의 공통 구간) ─────
@@ -34,9 +56,21 @@ namespace SDK::Offsets
     }
     namespace PlayerState {
         constexpr uintptr_t PawnPrivate    = 0x308;
+        constexpr uintptr_t OtomoData      = 0x5C8; // UPalPlayerOtomoData*
         constexpr uintptr_t InventoryData  = 0x5D8; // UPalPlayerInventoryData*
         constexpr uintptr_t PalStorage     = 0x5E0; // UPalPlayerDataPalStorage*
         constexpr uintptr_t TechnologyData = 0x5E8; // UPalTechnologyData*
+    }
+    namespace PlayerOtomoData {
+        // UPalPlayerOtomoData :
+        //   +0x28  FPalContainerId  OtomoCharacterContainerId  (16 byte)
+        constexpr uintptr_t OtomoCharacterContainerId = 0x28;
+    }
+    namespace ContainerBase {
+        // UPalContainerBase 의 ID 멤버. FPalContainerId 와 동일한 16 byte.
+        // UPalIndividualCharacterContainer 도 이를 상속하므로 +0x38 동일.
+        constexpr uintptr_t ID      = 0x38;
+        constexpr uintptr_t ID_Size = 0x10; // 16 byte
     }
     namespace Pawn {
         constexpr uintptr_t CharacterParameterComponent = 0x628;
@@ -94,8 +128,14 @@ namespace SDK::Offsets
     namespace ItemSlot {
         constexpr uintptr_t StackCount              = 0x154; // int32
         constexpr uintptr_t CorruptionProgressValue = 0x158; // float (음식 부패 진행도, 0=신선)
-        // DynamicItemData(0x190)는 TWeakObjectPtr → GUObjectArray 없이는 자동 해소 불가.
-        // 내구도/잔탄은 별도 Dynamic Item Data 객체 주소를 직접 받는다(아래 namespace).
+        // DynamicItemData @ +0x190 은 TWeakObjectPtr — UObjectArray 네임스페이스로
+        // GUObjectArray 를 통해 자동 해소. (구버전의 "수동 hex 주소" 경로는 제거됨.)
+        constexpr uintptr_t DynamicItemData_WeakPtr = 0x190; // FWeakObjectPtr 시작 (Index@+0, Serial@+4)
+    }
+    // FWeakObjectPtr 내부 레이아웃.
+    namespace WeakObjectPtr {
+        constexpr uintptr_t ObjectIndex        = 0x00; // int32
+        constexpr uintptr_t ObjectSerialNumber = 0x04; // int32
     }
 
     // UPalDynamicArmorItemDataBase / UPalDynamicWeaponItemDataBase 공통 레이아웃.

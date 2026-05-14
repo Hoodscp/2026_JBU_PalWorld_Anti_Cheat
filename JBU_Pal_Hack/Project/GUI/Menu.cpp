@@ -138,28 +138,50 @@ namespace Menu
     static void DrawPalsTab()
     {
         ImGui::SeparatorText("Source");
-        ImGui::RadioButton("Pal Box (Storage)",    &Config.PalSource, 0);
+        ImGui::RadioButton("Pal Box (Storage)", &Config.PalSource, 0);
         ImGui::SameLine();
-        ImGui::RadioButton("Party (Otomo, manual)", &Config.PalSource, 1);
+        ImGui::RadioButton("Party (Otomo)",     &Config.PalSource, 1);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-            "Otomo(데려다니는 팰) 컨테이너는 SDK 덤프에 직접 멤버 오프셋이 없어\n"
-            "한 번 Cheat Engine 등으로 UPalIndividualCharacterContainer 인스턴스의\n"
-            "주소를 잡아 아래에 입력해야 합니다. 추후 AOB 후크로 자동화 예정.");
+            "Party 선택 시 GUObjectArray 를 통해 데려다니는 팰 컨테이너를 자동 탐색.\n"
+            "실패하면 아래 hex 입력란에 직접 주소를 넣어 fallback 가능.");
 
         if (Config.PalSource == 1) {
-            // hex 입력 (uintptr_t)
+            // 자동 탐색 — 최초 진입 또는 캐시 무효화 시 1 회 실행.
+            uintptr_t cached = SDK::GetOtomoContainerOverride();
+            if (!cached || SDK::GetSlotCountIn(cached) <= 0) {
+                uintptr_t found = SDK::AutoFindOtomoContainer();
+                if (found) Config.OtomoContainerAddress = found;
+            } else {
+                // 캐시가 유효하면 UI 입력값도 동기화 (사용자가 hex 를 비웠더라도
+                // 자동 탐색 결과로 다시 채움 → 시각적 일관성).
+                Config.OtomoContainerAddress = cached;
+            }
+
+            ImGui::Text("Auto-detected: 0x%llX",
+                        (unsigned long long)SDK::GetOtomoContainerOverride());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Re-scan")) {
+                SDK::SetOtomoContainerOverride(0);
+                uintptr_t found = SDK::AutoFindOtomoContainer();
+                Config.OtomoContainerAddress = found;
+            }
+
+            // fallback / 디버그용 hex 입력. 자동 탐색이 잘못된 후보를 잡았을 때
+            // 사용자가 강제로 덮어쓸 수 있게 남겨둠.
             ImGui::SetNextItemWidth(220);
-            ImGui::InputScalar("Otomo Container Addr (hex)", ImGuiDataType_U64,
-                               &Config.OtomoContainerAddress, nullptr, nullptr, "%llX",
-                               ImGuiInputTextFlags_CharsHexadecimal);
+            if (ImGui::InputScalar("Override Addr (hex)", ImGuiDataType_U64,
+                                   &Config.OtomoContainerAddress, nullptr, nullptr, "%llX",
+                                   ImGuiInputTextFlags_CharsHexadecimal)) {
+                SDK::SetOtomoContainerOverride(Config.OtomoContainerAddress);
+            }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-                "UPalOtomoHolderComponentBase 인스턴스의 +0x110 가 가리키는\n"
-                "UPalIndividualCharacterContainer* 의 절대 주소. 0 으로 두면 비활성.");
+                "0 이면 다음 프레임에 자동 탐색이 재시도됩니다.\n"
+                "자동 탐색이 잘못된 후보를 잡았을 때 hex 로 강제 지정 가능.");
         }
 
         // Source 별 컨테이너 베이스 / 슬롯 카운트
         const uintptr_t container = (Config.PalSource == 1)
-                                    ? Config.OtomoContainerAddress
+                                    ? SDK::GetOtomoContainerOverride()
                                     : SDK::GetLocalPalContainer();
         const int slotCount = SDK::GetSlotCountIn(container);
 
@@ -169,8 +191,9 @@ namespace Menu
                 ImGui::TextDisabled("PalStorage not loaded (창고가 동기화되지 않음).");
                 ImGui::TextDisabled("팰박스를 한 번 열거나 본거지로 이동한 뒤 다시 시도.");
             } else {
-                ImGui::TextDisabled("Otomo 컨테이너 주소가 유효하지 않습니다.");
-                ImGui::TextDisabled("위 hex 입력란에 UPalIndividualCharacterContainer 주소 입력.");
+                ImGui::TextDisabled("Otomo 컨테이너를 찾지 못했습니다.");
+                ImGui::TextDisabled("팰을 한 번 소환/회수해 OtomoData 동기화 후 Re-scan.");
+                ImGui::TextDisabled("(또는 Offsets::Module::GUObjectArray 갱신 필요)");
             }
             return;
         }
@@ -281,32 +304,29 @@ namespace Menu
         if (curCorr >= 0.0f) ImGui::Text("Corruption   : %.3f  (0=fresh, 1=spoiled)", curCorr);
         else                 ImGui::TextDisabled("Corruption   : <empty / out-of-range>");
 
-        ImGui::SeparatorText("Equipment Durability / Bullets (manual hex)");
-        ImGui::SetNextItemWidth(220);
-        ImGui::InputScalar("Dynamic Item Data Addr (hex)", ImGuiDataType_U64,
-                           &Config.DynamicItemDataAddress, nullptr, nullptr, "%llX",
-                           ImGuiInputTextFlags_CharsHexadecimal);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-            "UPalDynamicArmorItemDataBase 또는 UPalDynamicWeaponItemDataBase 인스턴스의\n"
-            "절대 주소. 슬롯의 DynamicItemData 가 TWeakObjectPtr 라 자동 해소 불가하므로\n"
-            "한 번 Cheat Engine 등으로 잡아 입력하면 매 프레임 Durability/Bullets 강제.\n"
-            "0 이면 비활성. 추후 GUObjectArray 후크로 자동화 예정.");
-
+        ImGui::SeparatorText("Equipment Durability / Bullets");
+        ImGui::TextDisabled("선택된 Container/Slot 의 DynamicItemData 를 GUObjectArray 로 자동 해소.");
         ImGui::Checkbox("Force Durability = Max", &Config.bForceMaxDurability);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "선택 슬롯이 장비(Armor/Weapon)일 때만 동작.\n"
+            "MaxDurability 를 읽어 Durability(+0x78) 에 매 프레임 동기화.");
         ImGui::Checkbox("Force Remaining Bullets", &Config.bForceInfiniteBullets);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(120);
         ImGui::InputInt("##BulletsVal", &Config.TargetBullets);
         if (Config.TargetBullets < 0) Config.TargetBullets = 0;
 
-        if (Config.DynamicItemDataAddress) {
-            float dur  = SDK::GetDynamicDurability(Config.DynamicItemDataAddress);
-            float mx   = SDK::GetDynamicMaxDurability(Config.DynamicItemDataAddress);
-            int   bul  = SDK::GetDynamicRemainingBullets(Config.DynamicItemDataAddress);
+        uintptr_t dynData = SDK::GetItemSlotDynamicData(Config.SelectedContainerIdx, Config.SelectedSlotIndex);
+        if (dynData) {
+            float dur = SDK::GetItemDurability   (Config.SelectedContainerIdx, Config.SelectedSlotIndex);
+            float mx  = SDK::GetItemMaxDurability(Config.SelectedContainerIdx, Config.SelectedSlotIndex);
+            int   bul = SDK::GetItemRemainingBullets(Config.SelectedContainerIdx, Config.SelectedSlotIndex);
+            ImGui::Text("Dynamic Data : 0x%llX", (unsigned long long)dynData);
             ImGui::Text("Durability   : %.1f / %.1f", dur, mx);
             ImGui::Text("Bullets      : %d", bul);
         } else {
-            ImGui::TextDisabled("Dynamic item data not set.");
+            ImGui::TextDisabled("Dynamic Data : <none>  (해당 슬롯이 비었거나 장비가 아님,");
+            ImGui::TextDisabled("                       또는 GUObjectArray 미설정)");
         }
     }
 
