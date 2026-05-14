@@ -2,7 +2,6 @@
 #include "Offsets.h"
 #include "../Memory/Scanner.h"
 #include <windows.h>
-#include <atomic>
 
 namespace SDK
 {
@@ -478,18 +477,7 @@ namespace SDK
         return WriteAt<int32_t>(data + Offsets::DynamicItemData::RemainingBullets, value);
     }
 
-    // ───── 보유 팰 (Box / Otomo / 임의 컨테이너) ─────
-    namespace {
-        // Otomo(데려다니는 팰) 또는 임의 컨테이너 베이스. 정적 포인터 경로가
-        // 없으므로 Cheats/HookCheats/OtomoHook (UPalOtomoHolderComponentBase
-        // 멤버 함수 AOB 후크) 가 1 회 캡쳐해 등록한다. 후크 시그니처가 비어
-        // 있을 땐 UI 의 수동 hex 입력으로 대체. 0 이면 Otomo 기능 비활성.
-        //
-        // UI 렌더 스레드와 후크 detour(게임 메인 스레드) 가 동시 접근하므로
-        // std::atomic 필수 (torn 64-bit read / write 차단).
-        std::atomic<uintptr_t> g_OtomoContainerOverride{0};
-    }
-
+    // ───── 보유 팰 (Pal Box) ─────
     uintptr_t GetLocalPalStorage()
     {
         return Step(GetLocalPlayerState(), Offsets::PlayerState::PalStorage);
@@ -498,16 +486,6 @@ namespace SDK
     uintptr_t GetLocalPalContainer()
     {
         return Step(GetLocalPalStorage(), Offsets::PalStorage::TargetContainer);
-    }
-
-    void SetOtomoContainerOverride(uintptr_t containerBase)
-    {
-        g_OtomoContainerOverride.store(containerBase);
-    }
-
-    uintptr_t GetOtomoContainerOverride()
-    {
-        return g_OtomoContainerOverride.load();
     }
 
     // ── 일반화된 컨테이너 → Slot / IndividualParameter ──
@@ -539,12 +517,6 @@ namespace SDK
     uintptr_t GetPalSlotAt(int s)                          { return GetSlotInContainer(GetLocalPalContainer(), s); }
     uintptr_t GetPalIndividualParameterAt(int s)           { return GetIndividualParameterInContainer(GetLocalPalContainer(), s); }
     bool      IsPalSlotEmpty(int s)                        { return GetPalIndividualParameterAt(s) == 0; }
-
-    // ── Otomo(파티) wrapper ──
-    int       GetPartySlotCount()                          { return GetSlotCountIn(g_OtomoContainerOverride.load()); }
-    uintptr_t GetPartySlotAt(int s)                        { return GetSlotInContainer(g_OtomoContainerOverride.load(), s); }
-    uintptr_t GetPartyIndividualParameterAt(int s)         { return GetIndividualParameterInContainer(g_OtomoContainerOverride.load(), s); }
-    bool      IsPartySlotEmpty(int s)                      { return GetPartyIndividualParameterAt(s) == 0; }
 
     // ── per-Pal stat helpers (container-base 명시) ──
     int GetPalLevelIn(uintptr_t c, int s)

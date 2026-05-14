@@ -9,29 +9,15 @@ namespace PalCheats
     static constexpr float   kForcedSanity = 100.0f;
     static constexpr uint8_t kMaxTalent    = 100;
 
-    // Source 에 따라 컨테이너 베이스를 결정. Party 모드에서 캐시가 비어
-    // 있으면 그냥 0 을 반환해 Tick 을 skip — 자동 탐색은 UI(Menu) 측에서만
-    // 트리거한다. 과거 여기서 매 Tick 풀스캔을 돌렸더니 두 스레드(MainLoop +
-    // Render) 가 동시에 GUObjectArray 200K~ 순회를 반복하며 게임이 크래시.
-    static uintptr_t ResolveContainer(int source)
-    {
-        if (source != 1) return SDK::GetLocalPalContainer();
-
-        uintptr_t cached = SDK::GetOtomoContainerOverride();
-        if (cached && SDK::GetSlotCountIn(cached) > 0) return cached;
-        return 0;
-    }
-
     void Tick()
     {
         const auto& cfg = Menu::Config;
 
-        const int slot   = cfg.SelectedPalSlot;
-        const int source = cfg.PalSource;
+        const int slot = cfg.SelectedPalSlot;
         if (slot < 0) return;
 
-        const uintptr_t container = ResolveContainer(source);
-        if (!container) return;                              // Box 미동기화 / Party 자동 탐색 실패
+        const uintptr_t container = SDK::GetLocalPalContainer();
+        if (!container) return;                              // PalStorage 미동기화
         if (!SDK::GetIndividualParameterInContainer(container, slot)) return;  // 빈 슬롯
 
         if (cfg.bPalGodMode)     SDK::SetPalHPIn     (container, slot, kForcedHP);

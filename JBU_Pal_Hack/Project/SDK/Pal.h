@@ -110,33 +110,15 @@ namespace SDK
     int       GetItemRemainingBullets(int containerIndex, int slotIndex);
     bool      SetItemRemainingBullets(int containerIndex, int slotIndex, int value);
 
-    // ───── 보유 팰 (Pal Box / Storage / Otomo party / 임의 컨테이너) ─────
-    // 모든 헬퍼는 "컨테이너 베이스 = UPalIndividualCharacterContainer*" 위에서 동작.
-    // 박스/파티/베이스캠프 어디 컨테이너든 같은 SlotArray@0x80 레이아웃이므로
-    // 컨테이너 베이스만 알면 통일된 코드로 변조 가능.
+    // ───── 보유 팰 (Pal Box / Storage) ─────
+    // 체인: PlayerState → PalStorage → TargetContainer (Pal Box)
+    //       → SlotArray[index] → ReplicateIndividualParameter (+0x388 = SaveParameter)
     //
-    //  - GetLocalPalContainer()       : PlayerState → PalStorage → TargetContainer
-    //                                   (Pal Box, 기본값)
-    //  - SetOtomoContainerOverride()  : Otomo(파티) 또는 임의 컨테이너 주소를 등록.
-    //                                   설정되어 있으면 *FromOverride() / *AtParty()
-    //                                   계열 헬퍼가 이 베이스를 사용.
-    //
-    // 체인: <Container> → SlotArray[index] → ReplicateIndividualParameter
-    //       → (+0x388 = SaveParameter)
+    // ※ Otomo / Party 경로는 정적 포인터 체인이 존재하지 않아 한때 GUObjectArray
+    //   풀스캔 + AOB 후크로 구현했지만, 둘 다 안정성/검증 부담이 커서 제거됨.
+    //   파티 팰 변조가 필요해지면 별도 안정화된 경로로 재도입.
     uintptr_t GetLocalPalStorage();
     uintptr_t GetLocalPalContainer();
-
-    // 외부에서 잡아낸 (또는 후속 AOB 후크가 캡처한) Otomo/임의 컨테이너의
-    // 절대 주소를 등록한다. 0 을 넣으면 비활성화.
-    void      SetOtomoContainerOverride(uintptr_t containerBase);
-    uintptr_t GetOtomoContainerOverride();
-
-    // ── Otomo 컨테이너 캡쳐 ──
-    // 폐기됨: GUObjectArray 풀스캔 (AutoFindOtomoContainer). 두 스레드에서
-    // 동시에 200K+ 객체 IsBadReadPtr 폭주를 일으켜 게임 크래시 → 대체 경로로
-    // Cheats/HookCheats/OtomoHook (UPalOtomoHolderComponentBase 멤버 함수에
-    // AOB 후크) 가 this+0x110 을 1 회 캡쳐한다. SetOtomoContainerOverride 는
-    // 그대로 사용. 후크 설치가 안 됐을 땐 UI 의 수동 hex 입력으로 대체.
 
     // 컨테이너 베이스에서 슬롯/파라미터 추출 (일반화된 lower-level API).
     int       GetSlotCountIn(uintptr_t container);
@@ -148,12 +130,6 @@ namespace SDK
     uintptr_t GetPalSlotAt(int slotIndex);
     uintptr_t GetPalIndividualParameterAt(int slotIndex);
     bool      IsPalSlotEmpty(int slotIndex);
-
-    // Otomo(파티) 편의 wrapper — Override 미설정 시 0/false.
-    int       GetPartySlotCount();
-    uintptr_t GetPartySlotAt(int slotIndex);
-    uintptr_t GetPartyIndividualParameterAt(int slotIndex);
-    bool      IsPartySlotEmpty(int slotIndex);
 
     // 보유 팰 슬롯의 SaveParameter 멤버 R/W. (Pal Box / Party 어디든 같은 함수;
     // container 베이스를 명시적으로 받는 *In() 폼과, 박스/파티 wrapper 형태로 노출.)

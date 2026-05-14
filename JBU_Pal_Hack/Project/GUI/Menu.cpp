@@ -1,7 +1,6 @@
 #include "Menu.h"
 #include "../SDK/Pal.h"
 #include <imgui.h>
-#include <windows.h>  // IsBadReadPtr (ContainerId 안전 읽기용)
 
 namespace Menu
 {
@@ -138,76 +137,14 @@ namespace Menu
     // ─────────────────────────────────────────────────────────────────
     static void DrawPalsTab()
     {
-        ImGui::SeparatorText("Source");
-        ImGui::RadioButton("Pal Box (Storage)", &Config.PalSource, 0);
-        ImGui::SameLine();
-        ImGui::RadioButton("Party (Otomo)",     &Config.PalSource, 1);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-            "Party 컨테이너는 OtomoHook (UPalOtomoHolderComponentBase AOB 후크) 가\n"
-            "자동 캡쳐합니다. 후크 시그니처가 비어 있을 땐 아래 hex 입력으로 직접 지정.");
-
-        if (Config.PalSource == 1) {
-            // OtomoHook 이 캡쳐한 컨테이너 표시. 캡쳐 전엔 0 → 안내 메시지.
-            const uintptr_t captured = SDK::GetOtomoContainerOverride();
-            if (captured) {
-                // 자동 캡쳐 결과를 UI 입력란에도 반영 (시각적 일관성).
-                Config.OtomoContainerAddress = captured;
-                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f),
-                                   "Captured: 0x%llX", (unsigned long long)captured);
-
-                // 잡힌 컨테이너의 ContainerId(+0x38, 16 byte) 표시. 사용자는
-                // 이걸 CE 등으로 잡은 로컬 OtomoCharacterContainerId 와 직접
-                // 비교해 "내 컨테이너가 맞는지" 검증 가능. 두 값이 다르면
-                // 다른 OtomoHolder 가 잘못 잡힌 것 → Clear 후 재시도.
-                uint64_t idLo = 0, idHi = 0;
-                if (!IsBadReadPtr((const void*)(captured + 0x38), 0x10)) {
-                    idLo = *(const uint64_t*)(captured + 0x38);
-                    idHi = *(const uint64_t*)(captured + 0x40);
-                }
-                ImGui::TextDisabled("ContainerId: %016llX %016llX",
-                                    (unsigned long long)idHi,
-                                    (unsigned long long)idLo);
-            } else {
-                ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f),
-                                   "Waiting for OtomoHook capture...");
-                ImGui::TextDisabled("후크 시그니처가 비었거나 아직 컨테이너 생성 전.");
-                ImGui::TextDisabled("아래 hex 입력란에 직접 주소를 넣으면 즉시 활성화됩니다.");
-            }
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Clear")) {
-                SDK::SetOtomoContainerOverride(0);
-                Config.OtomoContainerAddress = 0;
-            }
-
-            // 수동 hex 입력 (시그니처 미설정 시 / 후크가 잘못된 컨테이너를 잡았을
-            // 때 강제 지정 / 외부 도구로 잡은 주소를 그대로 붙여넣는 fallback).
-            ImGui::SetNextItemWidth(220);
-            if (ImGui::InputScalar("Override Addr (hex)", ImGuiDataType_U64,
-                                   &Config.OtomoContainerAddress, nullptr, nullptr, "%llX",
-                                   ImGuiInputTextFlags_CharsHexadecimal)) {
-                SDK::SetOtomoContainerOverride(Config.OtomoContainerAddress);
-            }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-                "0 이면 OtomoHook 의 다음 캡쳐를 기다림.\n"
-                "수동 입력 시 즉시 등록됩니다.");
-        }
-
-        // Source 별 컨테이너 베이스 / 슬롯 카운트
-        const uintptr_t container = (Config.PalSource == 1)
-                                    ? SDK::GetOtomoContainerOverride()
-                                    : SDK::GetLocalPalContainer();
+        // Pal Box (PalStorage) 컨테이너만 지원.
+        const uintptr_t container = SDK::GetLocalPalContainer();
         const int slotCount = SDK::GetSlotCountIn(container);
 
         ImGui::SeparatorText("Selection");
         if (!container || slotCount <= 0) {
-            if (Config.PalSource == 0) {
-                ImGui::TextDisabled("PalStorage not loaded (창고가 동기화되지 않음).");
-                ImGui::TextDisabled("팰박스를 한 번 열거나 본거지로 이동한 뒤 다시 시도.");
-            } else {
-                ImGui::TextDisabled("Otomo 컨테이너가 아직 캡쳐되지 않았습니다.");
-                ImGui::TextDisabled("팰을 한 번 소환/회수하면 OtomoHook 이 자동 등록합니다.");
-                ImGui::TextDisabled("(또는 위 hex 입력란에 수동 주소 입력)");
-            }
+            ImGui::TextDisabled("PalStorage not loaded (창고가 동기화되지 않음).");
+            ImGui::TextDisabled("팰박스를 한 번 열거나 본거지로 이동한 뒤 다시 시도.");
             return;
         }
         ImGui::Text("Container: 0x%llX   Slots: %d", (unsigned long long)container, slotCount);

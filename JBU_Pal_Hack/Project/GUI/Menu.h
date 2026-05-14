@@ -57,14 +57,7 @@ namespace Menu
         bool bForceArenaRP    = false;
         int  TargetArenaRP    = 9999;
 
-        // ── 신규: 보유 팰 (PalCheats.cpp) ──
-        // PalSource : 0 = Pal Box (PalStorage 체인) , 1 = Otomo/Party (수동 주소)
-        int       PalSource             = 0;
-        // Otomo(데려다니는 팰) 컨테이너 베이스. SDK 덤프에 직접 멤버 오프셋이
-        // 없어 사용자가 한 번 Cheat Engine 등으로 잡아 입력해 줘야 한다.
-        // 0 이면 Party 모드 비활성.
-        uintptr_t OtomoContainerAddress = 0;
-
+        // ── 신규: 보유 팰 (PalCheats.cpp) — Pal Box 전용 ──
         int     SelectedPalSlot   = 0;
         bool    bPalGodMode       = false;   // HP = 1e9
         bool    bPalMaxSanity     = false;

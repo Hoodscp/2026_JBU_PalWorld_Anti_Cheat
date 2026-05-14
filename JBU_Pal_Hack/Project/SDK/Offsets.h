@@ -56,21 +56,9 @@ namespace SDK::Offsets
     }
     namespace PlayerState {
         constexpr uintptr_t PawnPrivate    = 0x308;
-        constexpr uintptr_t OtomoData      = 0x5C8; // UPalPlayerOtomoData*
         constexpr uintptr_t InventoryData  = 0x5D8; // UPalPlayerInventoryData*
         constexpr uintptr_t PalStorage     = 0x5E0; // UPalPlayerDataPalStorage*
         constexpr uintptr_t TechnologyData = 0x5E8; // UPalTechnologyData*
-    }
-    namespace PlayerOtomoData {
-        // UPalPlayerOtomoData :
-        //   +0x28  FPalContainerId  OtomoCharacterContainerId  (16 byte)
-        constexpr uintptr_t OtomoCharacterContainerId = 0x28;
-    }
-    namespace ContainerBase {
-        // UPalContainerBase 의 ID 멤버. FPalContainerId 와 동일한 16 byte.
-        // UPalIndividualCharacterContainer 도 이를 상속하므로 +0x38 동일.
-        constexpr uintptr_t ID      = 0x38;
-        constexpr uintptr_t ID_Size = 0x10; // 16 byte
     }
     namespace Pawn {
         constexpr uintptr_t CharacterParameterComponent = 0x628;
