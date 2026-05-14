@@ -1,6 +1,7 @@
 #include "Menu.h"
 #include "../SDK/Pal.h"
 #include <imgui.h>
+#include <windows.h>  // IsBadReadPtr (ContainerId 안전 읽기용)
 
 namespace Menu
 {
