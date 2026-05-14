@@ -2,6 +2,7 @@
 #include "Offsets.h"
 #include "../Memory/Scanner.h"
 #include <windows.h>
+#include <atomic>
 
 namespace SDK
 {
@@ -482,8 +483,19 @@ namespace SDK
         // Otomo(데려다니는 팰) 또는 임의 컨테이너 베이스. SDK 덤프상 직접 멤버
         // 오프셋이 없으므로 외부(Cheat Engine 사용자 입력 또는 향후 AOB 후크)
         // 에서 한 번 잡아 등록한다. 0 이면 Otomo 기능 자체가 비활성.
-        // std::atomic 미사용 — 단일 메인 루프 스레드에서만 갱신/조회됨.
-        uintptr_t g_OtomoContainerOverride = 0;
+        // UI 렌더 스레드와 MainLoop 가 동시 접근하므로 std::atomic 필수
+        // (torn 64-bit read / write 차단).
+        std::atomic<uintptr_t> g_OtomoContainerOverride{0};
+
+        // AutoFindOtomoContainer 의 동시 실행 방지 + 실패 쿨다운.
+        //  - g_otomoScanInProgress: false→true CAS 에 실패한 동시 호출자는
+        //    즉시 0 반환 → 두 스레드가 동시에 200K~ 풀스캔 도는 사고 차단.
+        //  - g_otomoLastScanTick   : 마지막 시도 시각(GetTickCount). 이로부터
+        //    kScanCooldownMs 미만이면 force=false 호출은 즉시 0 반환 → 매
+        //    프레임 폭주 차단. 사용자가 누른 Re-scan 만 force=true 로 우회.
+        std::atomic<bool>  g_otomoScanInProgress{false};
+        std::atomic<DWORD> g_otomoLastScanTick{0};
+        constexpr DWORD    kScanCooldownMs = 2000;
     }
 
     uintptr_t GetLocalPalStorage()
@@ -498,12 +510,12 @@ namespace SDK
 
     void SetOtomoContainerOverride(uintptr_t containerBase)
     {
-        g_OtomoContainerOverride = containerBase;
+        g_OtomoContainerOverride.store(containerBase);
     }
 
     uintptr_t GetOtomoContainerOverride()
     {
-        return g_OtomoContainerOverride;
+        return g_OtomoContainerOverride.load();
     }
 
     // ── Otomo 컨테이너 자동 탐색 ──
@@ -514,10 +526,36 @@ namespace SDK
     //   4) Override 캐시에 등록 후 주소 반환
     //
     // 비용: 보통 5만~20만 객체. 1 회 호출만 비싸고 결과는 캐시되므로 매 프레임
-    //       호출하지 않는다. UI 토글/버튼/PalCheats::Tick 의 폴백 경로에서만 호출.
-    uintptr_t AutoFindOtomoContainer()
+    //       호출하지 않는다. UI 토글/버튼에서만 호출하고, 매 Tick 폴백 경로
+    //       에서는 호출 금지 (PalCheats::Tick 은 캐시만 사용).
+    //
+    // 폭주 방지:
+    //   - g_otomoScanInProgress 로 동시 실행 차단 (UI/Tick 두 스레드 race 보호).
+    //   - g_otomoLastScanTick 으로 실패 후 kScanCooldownMs(2 초) 동안 재시도 차단.
+    //   - GUObjectArray 가 placeholder 라 numElements 가 비정상이면 (>500K)
+    //     스캔 자체를 거부 → 잘못된 베이스 주소에서 2M 회 IsBadReadPtr 폭주 차단.
+    //   - force=true 는 쿨다운만 우회 (in-progress 가드는 항상 적용).
+    uintptr_t AutoFindOtomoContainer(bool force)
     {
         if (!Offsets::Module::GUObjectArray) return 0;
+
+        // 동시 실행 차단: 다른 스레드가 이미 스캔 중이면 즉시 포기.
+        bool expected = false;
+        if (!g_otomoScanInProgress.compare_exchange_strong(expected, true)) {
+            return 0;
+        }
+        // 어떤 경로(early return / 정상 종료)로 빠져나가든 in-progress 해제.
+        struct InProgressGuard {
+            std::atomic<bool>& flag;
+            ~InProgressGuard() { flag.store(false); }
+        } guard{g_otomoScanInProgress};
+
+        // 쿨다운: 마지막 시도 후 2 초 이내라면 force=false 호출은 즉시 0.
+        // 시작 시점에 시각을 기록 → 실패/성공 무관하게 다음 자동 호출은 2 초 후.
+        const DWORD now  = GetTickCount();
+        const DWORD last = g_otomoLastScanTick.load();
+        if (!force && last != 0 && (now - last) < kScanCooldownMs) return 0;
+        g_otomoLastScanTick.store(now);
 
         // 1) Otomo ContainerId 16B 읽기
         uintptr_t ps = GetLocalPlayerState();
@@ -538,8 +576,11 @@ namespace SDK
         int32_t   numElements = Scanner::ReadMemory<int32_t>(objObjects + Offsets::UObjectArray::NumElements);
         uintptr_t chunkArray  = Scanner::ReadMemory<uintptr_t>(objObjects + Offsets::UObjectArray::ChunkArrayPtr);
         if (!chunkArray || numElements <= 0) return 0;
-        // 비정상적으로 큰 값 방어 (상한 200만).
-        if (numElements > 2'000'000) numElements = 2'000'000;
+        // 비정상적으로 큰 값이면 GUObjectArray 베이스가 이번 빌드와 안 맞는다고
+        // 판단하고 스캔 자체를 거부. 정상 UE5 게임은 ~20 만, 빌드 차이 여유까지
+        // 50 만으로 클램프. 이전엔 200 만까지 강행 → 잘못된 청크 주소들을 줄줄이
+        // IsBadReadPtr 로 두드리면서 게임 크래시.
+        if (numElements > 500'000) return 0;
 
         for (int32_t i = 0; i < numElements; ++i)
         {
@@ -602,9 +643,9 @@ namespace SDK
     bool      IsPalSlotEmpty(int s)                        { return GetPalIndividualParameterAt(s) == 0; }
 
     // ── Otomo(파티) wrapper ──
-    int       GetPartySlotCount()                          { return GetSlotCountIn(g_OtomoContainerOverride); }
-    uintptr_t GetPartySlotAt(int s)                        { return GetSlotInContainer(g_OtomoContainerOverride, s); }
-    uintptr_t GetPartyIndividualParameterAt(int s)         { return GetIndividualParameterInContainer(g_OtomoContainerOverride, s); }
+    int       GetPartySlotCount()                          { return GetSlotCountIn(g_OtomoContainerOverride.load()); }
+    uintptr_t GetPartySlotAt(int s)                        { return GetSlotInContainer(g_OtomoContainerOverride.load(), s); }
+    uintptr_t GetPartyIndividualParameterAt(int s)         { return GetIndividualParameterInContainer(g_OtomoContainerOverride.load(), s); }
     bool      IsPartySlotEmpty(int s)                      { return GetPartyIndividualParameterAt(s) == 0; }
 
     // ── per-Pal stat helpers (container-base 명시) ──

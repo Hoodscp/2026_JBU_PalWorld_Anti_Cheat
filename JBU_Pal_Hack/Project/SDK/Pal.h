@@ -137,7 +137,10 @@ namespace SDK
     // UPalIndividualCharacterContainer 인스턴스를 찾는다.
     // 성공 시 컨테이너 주소를 SetOtomoContainerOverride() 에 등록하고 반환,
     // 실패 시 0 반환. GUObjectArray 미설정/PlayerState 미동기화 시 0.
-    uintptr_t AutoFindOtomoContainer();
+    //
+    // 폭주 방지: 동시 호출은 즉시 0 반환, 최근 2 초 안에 시도했다면 force=false
+    // 호출은 즉시 0 반환. UI 의 명시적 Re-scan 버튼만 force=true 로 호출.
+    uintptr_t AutoFindOtomoContainer(bool force = false);
 
     // 컨테이너 베이스에서 슬롯/파라미터 추출 (일반화된 lower-level API).
     int       GetSlotCountIn(uintptr_t container);

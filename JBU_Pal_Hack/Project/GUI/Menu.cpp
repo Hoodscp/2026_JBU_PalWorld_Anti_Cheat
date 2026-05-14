@@ -161,8 +161,10 @@ namespace Menu
                         (unsigned long long)SDK::GetOtomoContainerOverride());
             ImGui::SameLine();
             if (ImGui::SmallButton("Re-scan")) {
+                // 사용자 명시 요청 — 쿨다운을 무시하고 즉시 한 번 스캔.
+                // (in-progress 가드는 SDK 내부에서 여전히 적용됨.)
                 SDK::SetOtomoContainerOverride(0);
-                uintptr_t found = SDK::AutoFindOtomoContainer();
+                uintptr_t found = SDK::AutoFindOtomoContainer(/*force=*/true);
                 Config.OtomoContainerAddress = found;
             }
 

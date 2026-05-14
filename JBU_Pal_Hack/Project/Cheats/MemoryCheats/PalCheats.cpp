@@ -10,16 +10,16 @@ namespace PalCheats
     static constexpr uint8_t kMaxTalent    = 100;
 
     // Source 에 따라 컨테이너 베이스를 결정. Party 모드에서 캐시가 비어
-    // 있거나 무효(SlotArray.Num<=0)면 자동 탐색을 1 회 시도한다.
+    // 있으면 그냥 0 을 반환해 Tick 을 skip — 자동 탐색은 UI(Menu) 측에서만
+    // 트리거한다. 과거 여기서 매 Tick 풀스캔을 돌렸더니 두 스레드(MainLoop +
+    // Render) 가 동시에 GUObjectArray 200K~ 순회를 반복하며 게임이 크래시.
     static uintptr_t ResolveContainer(int source)
     {
         if (source != 1) return SDK::GetLocalPalContainer();
 
         uintptr_t cached = SDK::GetOtomoContainerOverride();
         if (cached && SDK::GetSlotCountIn(cached) > 0) return cached;
-
-        // 자동 탐색 시도. 성공하면 SetOtomoContainerOverride 까지 내부에서 처리됨.
-        return SDK::AutoFindOtomoContainer();
+        return 0;
     }
 
     void Tick()
