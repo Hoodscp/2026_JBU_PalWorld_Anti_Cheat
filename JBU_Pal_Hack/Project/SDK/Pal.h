@@ -131,16 +131,12 @@ namespace SDK
     void      SetOtomoContainerOverride(uintptr_t containerBase);
     uintptr_t GetOtomoContainerOverride();
 
-    // ── 자동 탐색 ──
-    // 로컬 PlayerState 의 OtomoData 에서 OtomoCharacterContainerId(16 byte)를
-    // 읽고, GUObjectArray 를 순회해 +0x38 의 ID 가 일치하는
-    // UPalIndividualCharacterContainer 인스턴스를 찾는다.
-    // 성공 시 컨테이너 주소를 SetOtomoContainerOverride() 에 등록하고 반환,
-    // 실패 시 0 반환. GUObjectArray 미설정/PlayerState 미동기화 시 0.
-    //
-    // 폭주 방지: 동시 호출은 즉시 0 반환, 최근 2 초 안에 시도했다면 force=false
-    // 호출은 즉시 0 반환. UI 의 명시적 Re-scan 버튼만 force=true 로 호출.
-    uintptr_t AutoFindOtomoContainer(bool force = false);
+    // ── Otomo 컨테이너 캡쳐 ──
+    // 폐기됨: GUObjectArray 풀스캔 (AutoFindOtomoContainer). 두 스레드에서
+    // 동시에 200K+ 객체 IsBadReadPtr 폭주를 일으켜 게임 크래시 → 대체 경로로
+    // Cheats/HookCheats/OtomoHook (UPalOtomoHolderComponentBase 멤버 함수에
+    // AOB 후크) 가 this+0x110 을 1 회 캡쳐한다. SetOtomoContainerOverride 는
+    // 그대로 사용. 후크 설치가 안 됐을 땐 UI 의 수동 hex 입력으로 대체.
 
     // 컨테이너 베이스에서 슬롯/파라미터 추출 (일반화된 lower-level API).
     int       GetSlotCountIn(uintptr_t container);

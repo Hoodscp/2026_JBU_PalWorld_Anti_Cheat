@@ -142,34 +142,31 @@ namespace Menu
         ImGui::SameLine();
         ImGui::RadioButton("Party (Otomo)",     &Config.PalSource, 1);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-            "Party 선택 시 GUObjectArray 를 통해 데려다니는 팰 컨테이너를 자동 탐색.\n"
-            "실패하면 아래 hex 입력란에 직접 주소를 넣어 fallback 가능.");
+            "Party 컨테이너는 OtomoHook (UPalOtomoHolderComponentBase AOB 후크) 가\n"
+            "자동 캡쳐합니다. 후크 시그니처가 비어 있을 땐 아래 hex 입력으로 직접 지정.");
 
         if (Config.PalSource == 1) {
-            // 자동 탐색 — 최초 진입 또는 캐시 무효화 시 1 회 실행.
-            uintptr_t cached = SDK::GetOtomoContainerOverride();
-            if (!cached || SDK::GetSlotCountIn(cached) <= 0) {
-                uintptr_t found = SDK::AutoFindOtomoContainer();
-                if (found) Config.OtomoContainerAddress = found;
+            // OtomoHook 이 캡쳐한 컨테이너 표시. 캡쳐 전엔 0 → 안내 메시지.
+            const uintptr_t captured = SDK::GetOtomoContainerOverride();
+            if (captured) {
+                // 자동 캡쳐 결과를 UI 입력란에도 반영 (시각적 일관성).
+                Config.OtomoContainerAddress = captured;
+                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f),
+                                   "Captured: 0x%llX", (unsigned long long)captured);
             } else {
-                // 캐시가 유효하면 UI 입력값도 동기화 (사용자가 hex 를 비웠더라도
-                // 자동 탐색 결과로 다시 채움 → 시각적 일관성).
-                Config.OtomoContainerAddress = cached;
+                ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f),
+                                   "Waiting for OtomoHook capture...");
+                ImGui::TextDisabled("후크 시그니처가 비었거나 아직 컨테이너 생성 전.");
+                ImGui::TextDisabled("아래 hex 입력란에 직접 주소를 넣으면 즉시 활성화됩니다.");
             }
-
-            ImGui::Text("Auto-detected: 0x%llX",
-                        (unsigned long long)SDK::GetOtomoContainerOverride());
             ImGui::SameLine();
-            if (ImGui::SmallButton("Re-scan")) {
-                // 사용자 명시 요청 — 쿨다운을 무시하고 즉시 한 번 스캔.
-                // (in-progress 가드는 SDK 내부에서 여전히 적용됨.)
+            if (ImGui::SmallButton("Clear")) {
                 SDK::SetOtomoContainerOverride(0);
-                uintptr_t found = SDK::AutoFindOtomoContainer(/*force=*/true);
-                Config.OtomoContainerAddress = found;
+                Config.OtomoContainerAddress = 0;
             }
 
-            // fallback / 디버그용 hex 입력. 자동 탐색이 잘못된 후보를 잡았을 때
-            // 사용자가 강제로 덮어쓸 수 있게 남겨둠.
+            // 수동 hex 입력 (시그니처 미설정 시 / 후크가 잘못된 컨테이너를 잡았을
+            // 때 강제 지정 / 외부 도구로 잡은 주소를 그대로 붙여넣는 fallback).
             ImGui::SetNextItemWidth(220);
             if (ImGui::InputScalar("Override Addr (hex)", ImGuiDataType_U64,
                                    &Config.OtomoContainerAddress, nullptr, nullptr, "%llX",
@@ -177,8 +174,8 @@ namespace Menu
                 SDK::SetOtomoContainerOverride(Config.OtomoContainerAddress);
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-                "0 이면 다음 프레임에 자동 탐색이 재시도됩니다.\n"
-                "자동 탐색이 잘못된 후보를 잡았을 때 hex 로 강제 지정 가능.");
+                "0 이면 OtomoHook 의 다음 캡쳐를 기다림.\n"
+                "수동 입력 시 즉시 등록됩니다.");
         }
 
         // Source 별 컨테이너 베이스 / 슬롯 카운트
@@ -193,9 +190,9 @@ namespace Menu
                 ImGui::TextDisabled("PalStorage not loaded (창고가 동기화되지 않음).");
                 ImGui::TextDisabled("팰박스를 한 번 열거나 본거지로 이동한 뒤 다시 시도.");
             } else {
-                ImGui::TextDisabled("Otomo 컨테이너를 찾지 못했습니다.");
-                ImGui::TextDisabled("팰을 한 번 소환/회수해 OtomoData 동기화 후 Re-scan.");
-                ImGui::TextDisabled("(또는 Offsets::Module::GUObjectArray 갱신 필요)");
+                ImGui::TextDisabled("Otomo 컨테이너가 아직 캡쳐되지 않았습니다.");
+                ImGui::TextDisabled("팰을 한 번 소환/회수하면 OtomoHook 이 자동 등록합니다.");
+                ImGui::TextDisabled("(또는 위 hex 입력란에 수동 주소 입력)");
             }
             return;
         }

@@ -15,6 +15,7 @@
 #include "../Cheats/MemoryCheats/ItemDurabilityCheats.h"
 #include "../Cheats/HookCheats/ExampleHook.h"
 #include "../Cheats/HookCheats/TemperatureHook.h"
+#include "../Cheats/HookCheats/OtomoHook.h"
 
 namespace HackMain
 {
@@ -43,6 +44,7 @@ namespace HackMain
         // 새 후킹 치트는 여기에 한 줄씩 추가.
         ExampleHook::Install();
         TemperatureHook::Install();
+        OtomoHook::Install();
 
         // 3. Initialize GUI Overlay (ImGui Render Hook)
         Overlay::Initialize();

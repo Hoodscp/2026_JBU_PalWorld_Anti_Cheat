@@ -6,7 +6,15 @@
       "Bash(command -v cmake)",
       "Bash(cmake --version)",
       "PowerShell(Get-Command *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "mcp__ida-pro-mcp__lookup_funcs",
+      "mcp__ida-pro-mcp__find_regex",
+      "mcp__ida-pro-mcp__xrefs_to",
+      "mcp__ida-pro-mcp__get_bytes",
+      "mcp__ida-pro-mcp__decompile",
+      "mcp__ida-pro-mcp__get_string",
+      "mcp__ida-pro-mcp__disasm",
+      "mcp__ida-pro-mcp__find_bytes"
     ]
   }
 }

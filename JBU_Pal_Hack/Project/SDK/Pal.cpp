@@ -480,22 +480,14 @@ namespace SDK
 
     // ───── 보유 팰 (Box / Otomo / 임의 컨테이너) ─────
     namespace {
-        // Otomo(데려다니는 팰) 또는 임의 컨테이너 베이스. SDK 덤프상 직접 멤버
-        // 오프셋이 없으므로 외부(Cheat Engine 사용자 입력 또는 향후 AOB 후크)
-        // 에서 한 번 잡아 등록한다. 0 이면 Otomo 기능 자체가 비활성.
-        // UI 렌더 스레드와 MainLoop 가 동시 접근하므로 std::atomic 필수
-        // (torn 64-bit read / write 차단).
+        // Otomo(데려다니는 팰) 또는 임의 컨테이너 베이스. 정적 포인터 경로가
+        // 없으므로 Cheats/HookCheats/OtomoHook (UPalOtomoHolderComponentBase
+        // 멤버 함수 AOB 후크) 가 1 회 캡쳐해 등록한다. 후크 시그니처가 비어
+        // 있을 땐 UI 의 수동 hex 입력으로 대체. 0 이면 Otomo 기능 비활성.
+        //
+        // UI 렌더 스레드와 후크 detour(게임 메인 스레드) 가 동시 접근하므로
+        // std::atomic 필수 (torn 64-bit read / write 차단).
         std::atomic<uintptr_t> g_OtomoContainerOverride{0};
-
-        // AutoFindOtomoContainer 의 동시 실행 방지 + 실패 쿨다운.
-        //  - g_otomoScanInProgress: false→true CAS 에 실패한 동시 호출자는
-        //    즉시 0 반환 → 두 스레드가 동시에 200K~ 풀스캔 도는 사고 차단.
-        //  - g_otomoLastScanTick   : 마지막 시도 시각(GetTickCount). 이로부터
-        //    kScanCooldownMs 미만이면 force=false 호출은 즉시 0 반환 → 매
-        //    프레임 폭주 차단. 사용자가 누른 Re-scan 만 force=true 로 우회.
-        std::atomic<bool>  g_otomoScanInProgress{false};
-        std::atomic<DWORD> g_otomoLastScanTick{0};
-        constexpr DWORD    kScanCooldownMs = 2000;
     }
 
     uintptr_t GetLocalPalStorage()
@@ -516,100 +508,6 @@ namespace SDK
     uintptr_t GetOtomoContainerOverride()
     {
         return g_OtomoContainerOverride.load();
-    }
-
-    // ── Otomo 컨테이너 자동 탐색 ──
-    // 동작 흐름:
-    //   1) PlayerState → OtomoData(+0x5C8) → OtomoCharacterContainerId(+0x28, 16B)
-    //   2) GUObjectArray 순회: 각 객체 +0x38 (UPalContainerBase::ID) 와 16B 비교
-    //   3) 후보 발견 시 sanity check: SlotArray.Num(+0x88) 이 1~256 범위 → 합격
-    //   4) Override 캐시에 등록 후 주소 반환
-    //
-    // 비용: 보통 5만~20만 객체. 1 회 호출만 비싸고 결과는 캐시되므로 매 프레임
-    //       호출하지 않는다. UI 토글/버튼에서만 호출하고, 매 Tick 폴백 경로
-    //       에서는 호출 금지 (PalCheats::Tick 은 캐시만 사용).
-    //
-    // 폭주 방지:
-    //   - g_otomoScanInProgress 로 동시 실행 차단 (UI/Tick 두 스레드 race 보호).
-    //   - g_otomoLastScanTick 으로 실패 후 kScanCooldownMs(2 초) 동안 재시도 차단.
-    //   - GUObjectArray 가 placeholder 라 numElements 가 비정상이면 (>500K)
-    //     스캔 자체를 거부 → 잘못된 베이스 주소에서 2M 회 IsBadReadPtr 폭주 차단.
-    //   - force=true 는 쿨다운만 우회 (in-progress 가드는 항상 적용).
-    uintptr_t AutoFindOtomoContainer(bool force)
-    {
-        if (!Offsets::Module::GUObjectArray) return 0;
-
-        // 동시 실행 차단: 다른 스레드가 이미 스캔 중이면 즉시 포기.
-        bool expected = false;
-        if (!g_otomoScanInProgress.compare_exchange_strong(expected, true)) {
-            return 0;
-        }
-        // 어떤 경로(early return / 정상 종료)로 빠져나가든 in-progress 해제.
-        struct InProgressGuard {
-            std::atomic<bool>& flag;
-            ~InProgressGuard() { flag.store(false); }
-        } guard{g_otomoScanInProgress};
-
-        // 쿨다운: 마지막 시도 후 2 초 이내라면 force=false 호출은 즉시 0.
-        // 시작 시점에 시각을 기록 → 실패/성공 무관하게 다음 자동 호출은 2 초 후.
-        const DWORD now  = GetTickCount();
-        const DWORD last = g_otomoLastScanTick.load();
-        if (!force && last != 0 && (now - last) < kScanCooldownMs) return 0;
-        g_otomoLastScanTick.store(now);
-
-        // 1) Otomo ContainerId 16B 읽기
-        uintptr_t ps = GetLocalPlayerState();
-        if (!ps) return 0;
-        uintptr_t otomoData = Scanner::ReadMemory<uintptr_t>(ps + Offsets::PlayerState::OtomoData);
-        if (!otomoData) return 0;
-
-        const uintptr_t idAddr = otomoData + Offsets::PlayerOtomoData::OtomoCharacterContainerId;
-        if (IsBadReadPtr((const void*)idAddr, Offsets::ContainerBase::ID_Size)) return 0;
-        uint64_t targetIdLo = *(const uint64_t*)(idAddr + 0x0);
-        uint64_t targetIdHi = *(const uint64_t*)(idAddr + 0x8);
-        // 전부 0 인 ID 는 false-positive 위험 너무 큼 → 거부.
-        if (targetIdLo == 0 && targetIdHi == 0) return 0;
-
-        // 2) GUObjectArray 순회 준비
-        uintptr_t modBase    = (uintptr_t)GetModuleHandle(NULL);
-        uintptr_t objObjects = modBase + Offsets::Module::GUObjectArray + Offsets::UObjectArray::ObjObjects;
-        int32_t   numElements = Scanner::ReadMemory<int32_t>(objObjects + Offsets::UObjectArray::NumElements);
-        uintptr_t chunkArray  = Scanner::ReadMemory<uintptr_t>(objObjects + Offsets::UObjectArray::ChunkArrayPtr);
-        if (!chunkArray || numElements <= 0) return 0;
-        // 비정상적으로 큰 값이면 GUObjectArray 베이스가 이번 빌드와 안 맞는다고
-        // 판단하고 스캔 자체를 거부. 정상 UE5 게임은 ~20 만, 빌드 차이 여유까지
-        // 50 만으로 클램프. 이전엔 200 만까지 강행 → 잘못된 청크 주소들을 줄줄이
-        // IsBadReadPtr 로 두드리면서 게임 크래시.
-        if (numElements > 500'000) return 0;
-
-        for (int32_t i = 0; i < numElements; ++i)
-        {
-            const int chunkIdx  = i / Offsets::UObjectArray::NumPerChunk;
-            const int withinIdx = i % Offsets::UObjectArray::NumPerChunk;
-
-            uintptr_t chunkBase = Scanner::ReadMemory<uintptr_t>(chunkArray + (uintptr_t)chunkIdx * sizeof(uintptr_t));
-            if (!chunkBase) continue;
-
-            uintptr_t obj = Scanner::ReadMemory<uintptr_t>(
-                chunkBase + (uintptr_t)withinIdx * Offsets::UObjectArray::Item_Size);
-            if (!obj) continue;
-
-            // ID 비교 (16 byte). IsBadReadPtr 한 번으로 안전 확인 후 8+8.
-            const uintptr_t objIdAddr = obj + Offsets::ContainerBase::ID;
-            if (IsBadReadPtr((const void*)objIdAddr, Offsets::ContainerBase::ID_Size)) continue;
-            if (*(const uint64_t*)(objIdAddr + 0x0) != targetIdLo) continue;
-            if (*(const uint64_t*)(objIdAddr + 0x8) != targetIdHi) continue;
-
-            // 후보 발견. SlotArray.Num sanity check.
-            int32_t num = Scanner::ReadMemory<int32_t>(obj + Offsets::PalCharContainer::SlotArray_Num);
-            if (num <= 0 || num > 256) continue;
-            uintptr_t arrData = Scanner::ReadMemory<uintptr_t>(obj + Offsets::PalCharContainer::SlotArray_Data);
-            if (!arrData) continue;
-
-            SetOtomoContainerOverride(obj);
-            return obj;
-        }
-        return 0;
     }
 
     // ── 일반화된 컨테이너 → Slot / IndividualParameter ──
