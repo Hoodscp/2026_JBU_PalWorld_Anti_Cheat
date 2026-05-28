@@ -9,10 +9,13 @@ add_library(${PROJECT_NAME} SHARED
     # GUI
     GUI/Menu.cpp
     GUI/Overlay.cpp
-    # 인프라 (스캐너, 후킹 매니저, 시스템 후킹)
+    # 인프라 (스캐너, 후킹 매니저, 시스템 후킹, mid-function trampoline 헬퍼)
     Memory/Scanner.cpp
     Memory/HookManager.cpp
     Memory/CursorHooks.cpp
+    Memory/MidHook.cpp
+    Memory/NopHook.cpp
+    Memory/SaveSpaceHook.cpp
     # SDK (오프셋 기반 게임 데이터 접근)
     SDK/Pal.cpp
     # Track 1: 오프셋 기반 메모리 치트 (각 기능 = 1 파일)
@@ -27,6 +30,18 @@ add_library(${PROJECT_NAME} SHARED
     # Track 2: AOB + 함수 후킹 치트 (각 기능 = 1 파일)
     Cheats/HookCheats/ExampleHook.cpp
     Cheats/HookCheats/TemperatureHook.cpp
+    # P0 NOP 패치 후킹
+    Cheats/HookCheats/StaminaSubHook.cpp
+    Cheats/HookCheats/FoodHungerHook.cpp
+    Cheats/HookCheats/FoodTimerHook.cpp
+    Cheats/HookCheats/WriteItemsHook.cpp
+    Cheats/HookCheats/DurabilityWriteHook.cpp
+    Cheats/HookCheats/AmmoDecreaseHook.cpp
+    # P1 포인터 캡처 후킹
+    Cheats/HookCheats/PlayerPtrCaptureHook.cpp
+    Cheats/HookCheats/ItemSlotCaptureHook.cpp
+    Cheats/HookCheats/TechPointCaptureHook.cpp
+    Cheats/HookCheats/ExpPtrCaptureHook.cpp
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)

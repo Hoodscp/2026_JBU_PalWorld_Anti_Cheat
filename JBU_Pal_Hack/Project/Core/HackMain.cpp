@@ -15,6 +15,18 @@
 #include "../Cheats/MemoryCheats/ItemDurabilityCheats.h"
 #include "../Cheats/HookCheats/ExampleHook.h"
 #include "../Cheats/HookCheats/TemperatureHook.h"
+// Track 2 / P0 — NOP 패치 후킹들
+#include "../Cheats/HookCheats/StaminaSubHook.h"
+#include "../Cheats/HookCheats/FoodHungerHook.h"
+#include "../Cheats/HookCheats/FoodTimerHook.h"
+#include "../Cheats/HookCheats/WriteItemsHook.h"
+#include "../Cheats/HookCheats/DurabilityWriteHook.h"
+#include "../Cheats/HookCheats/AmmoDecreaseHook.h"
+// Track 2 / P1 — 포인터 캡처 후킹들 (토글 없이 항상 활성)
+#include "../Cheats/HookCheats/PlayerPtrCaptureHook.h"
+#include "../Cheats/HookCheats/ItemSlotCaptureHook.h"
+#include "../Cheats/HookCheats/TechPointCaptureHook.h"
+#include "../Cheats/HookCheats/ExpPtrCaptureHook.h"
 
 namespace HackMain
 {
@@ -43,6 +55,18 @@ namespace HackMain
         // 새 후킹 치트는 여기에 한 줄씩 추가.
         ExampleHook::Install();
         TemperatureHook::Install();
+        // P0 — NOP 패치 후킹 (토글 가능)
+        StaminaSubHook::Install();
+        FoodHungerHook::Install();
+        FoodTimerHook::Install();
+        WriteItemsHook::Install();
+        DurabilityWriteHook::Install();
+        AmmoDecreaseHook::Install();
+        // P1 — 포인터 캡처 후킹 (항상 ON, GWorld 백업 경로 제공)
+        PlayerPtrCaptureHook::Install();
+        ItemSlotCaptureHook::Install();
+        TechPointCaptureHook::Install();
+        ExpPtrCaptureHook::Install();
 
         // 3. Initialize GUI Overlay (ImGui Render Hook)
         Overlay::Initialize();
@@ -64,9 +88,19 @@ namespace HackMain
         // 게임 함수 후킹을 먼저 풀고, 그 다음 렌더 후킹을 정리합니다.
         // Overlay::Shutdown 내부의 kiero::shutdown이 MH_Uninitialize를 소유하므로
         // HookManager::Shutdown은 그 전에 와야 합니다.
-        // TemperatureHook은 직접 byte patch 라 HookManager 와 별개로 정리해야 함
+        // mid-function patch 들은 직접 byte patch 라 HookManager 와 별개로 정리해야 함
         // (정리 누락 시 DLL 언로드 후 dangling jmp 로 게임 크래시).
         TemperatureHook::Shutdown();
+        StaminaSubHook::Shutdown();
+        FoodHungerHook::Shutdown();
+        FoodTimerHook::Shutdown();
+        WriteItemsHook::Shutdown();
+        DurabilityWriteHook::Shutdown();
+        AmmoDecreaseHook::Shutdown();
+        PlayerPtrCaptureHook::Shutdown();
+        ItemSlotCaptureHook::Shutdown();
+        TechPointCaptureHook::Shutdown();
+        ExpPtrCaptureHook::Shutdown();
         HookManager::Shutdown();
         Overlay::Shutdown();
 
@@ -95,7 +129,14 @@ namespace HackMain
             ItemDurabilityCheats::Tick();
 
             // Track 2 후킹 중 매 프레임 toggle 동기화가 필요한 것만 호출.
+            // (포인터 캡처 후킹은 토글 없이 항상 ON 이라 Tick 불필요.)
             TemperatureHook::Tick();
+            StaminaSubHook::Tick();
+            FoodHungerHook::Tick();
+            FoodTimerHook::Tick();
+            WriteItemsHook::Tick();
+            DurabilityWriteHook::Tick();
+            AmmoDecreaseHook::Tick();
 
             Sleep(10); // Prevent CPU maxout
         }

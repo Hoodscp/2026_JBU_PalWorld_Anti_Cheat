@@ -26,6 +26,15 @@ namespace Menu
         // ── 신규: 환경 (Track 2 mid-function patch) ──
         bool bForceNormalTemp = false; // 온도 상태 변경 명령에서 새 값 → 0(Normal) 강제
 
+        // ── Track 2 / P0 AOB NOP 패치 (HookCheats/*Hook.cpp) ──
+        // Track 1 의 폴링 방식과 별도 토글. 둘 다 켜놔도 무방 (서로 다른 메커니즘).
+        bool bHookInfStamina        = false; // StaminaSubHook: subss xmm0,xmm2 무력화
+        bool bHookNoHunger          = false; // FoodHungerHook: subss xmm2,xmm7 무력화
+        bool bHookFreezeFoodTimer   = false; // FoodTimerHook: movss [rbx+0x158] write 무력화
+        bool bHookItemsNoDecrease   = false; // WriteItemsHook: mov [rbx+0x154],r14d 무력화
+        bool bHookInfDurability     = false; // DurabilityWriteHook: movss [rcx+0x10] 무력화
+        bool bHookInfAmmo           = false; // AmmoDecreaseHook: lea/mov 쌍 통째로 NOP
+
         // ── 신규: 인벤토리 ──
         bool bForceItemStack       = false;
         int  SelectedContainerIdx  = 0;

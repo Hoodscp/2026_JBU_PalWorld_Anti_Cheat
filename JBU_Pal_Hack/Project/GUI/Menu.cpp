@@ -11,7 +11,7 @@ namespace Menu
     // ─────────────────────────────────────────────────────────────────
     static void DrawPlayerTab()
     {
-        ImGui::SeparatorText("Toggles");
+        ImGui::SeparatorText("Toggles (Track 1: Memory polling)");
         ImGui::Checkbox("God Mode",                &Config.bGodMode);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("HP 를 매 프레임 큰 값으로 덮어씁니다.");
         ImGui::Checkbox("Infinite Stamina (SP)",   &Config.bInfiniteStamina);
@@ -20,6 +20,18 @@ namespace Menu
         ImGui::Checkbox("Shield Boost (ShieldHP)", &Config.bShieldBoost);
         ImGui::Checkbox("Free Status Points",      &Config.bFreeStatusPoint);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("UnusedStatusPoint 를 999 로 유지 → 무한 분배");
+
+        ImGui::SeparatorText("Toggles (Track 2: AOB hook — stronger)");
+        ImGui::Checkbox("Hook: Inf Stamina (subss NOP)", &Config.bHookInfStamina);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "스태미나 차감 명령(subss xmm0,xmm2) 자체를 NOP 화.\n"
+            "Track 1 폴링과 독립적으로 작동 — 둘 다 켜둬도 무방.");
+        ImGui::Checkbox("Hook: No Hunger (subss NOP)",   &Config.bHookNoHunger);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "배고픔 차감 명령(subss xmm2,xmm7) 자체를 NOP 화.");
+        ImGui::Checkbox("Hook: Inf Ammo (lea/mov NOP)",  &Config.bHookInfAmmo);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "탄약 -1 후 write 하는 명령 쌍(lea+mov) 9바이트 NOP.");
 
         ImGui::SeparatorText("Live Stats");
         int64_t hp     = SDK::GetLocalPlayerHealth();
@@ -265,6 +277,20 @@ namespace Menu
         ImGui::SetNextItemWidth(120);
         ImGui::InputInt("##BulletsVal", &Config.TargetBullets);
         if (Config.TargetBullets < 0) Config.TargetBullets = 0;
+
+        ImGui::SeparatorText("AOB Hooks (Track 2: 게임 write 명령 차단)");
+        ImGui::Checkbox("Hook: Items Don't Decrease (write NOP)", &Config.bHookItemsNoDecrease);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "mov [rbx+0x154], r14d (스택카운트 write) 명령을 NOP 처리 →\n"
+            "어떤 슬롯이든 아이템 사용 시 수량 차감 안 됨. 슬롯 선택 무관.");
+        ImGui::Checkbox("Hook: Inf Durability (movss NOP)", &Config.bHookInfDurability);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "movss [rcx+0x10], xmm0 (내구도 write) 명령을 NOP 처리 →\n"
+            "모든 장비 내구도가 깎이지 않음. Track 1 의 Force Durability 와 독립.");
+        ImGui::Checkbox("Hook: Freeze Food Timer (movss NOP)", &Config.bHookFreezeFoodTimer);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "movss [rbx+0x158], xmm0 (조리/숙성 타이머 write) 명령을 NOP 처리 →\n"
+            "음식이 시간 경과로 변하지 않음. Freshness 동결과는 다른 메커니즘.");
 
         uintptr_t dynData = SDK::GetItemSlotDynamicData(Config.SelectedContainerIdx, Config.SelectedSlotIndex);
         if (dynData) {
