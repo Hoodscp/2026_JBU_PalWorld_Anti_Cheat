@@ -1,0 +1,3 @@
+C:/Users/user/Documents/4gradu/Project/anti-cheat_module/out/build/x64-Debug/CMakeFiles/ac_procmon.dir
+C:/Users/user/Documents/4gradu/Project/anti-cheat_module/out/build/x64-Debug/CMakeFiles/edit_cache.dir
+C:/Users/user/Documents/4gradu/Project/anti-cheat_module/out/build/x64-Debug/CMakeFiles/rebuild_cache.dir
