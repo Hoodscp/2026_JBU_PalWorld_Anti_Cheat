@@ -9,6 +9,7 @@
 ```
 2026_JBU_Pal_Anti_Cheat/
 ├── JBU_Pal_Hack/Project/   # 치트 클라이언트 (C++ DLL)
+├── Anticheat_client/        # 안티치트 클라이언트 탐지 모듈 (C++)
 ├── Anticheat_server/        # 안티치트 서버 & 대시보드
 └── Analyze/                 # 포인터 스캔 분석 도구
 ```
@@ -166,6 +167,31 @@ setup_vendor.bat
 cmake -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 ```
+
+---
+
+## Anticheat Client — 탐지 모듈
+
+치트를 탐지하는 클라이언트 측 C++ 모듈 모음입니다. 모든 모듈은 공통 인터페이스
+`IDetectionModule` 를 구현하고 결과를 단일 `DetectionEventQueue` 로 보냅니다.
+
+### 외부 감시(External) 모듈 — 게임 프로세스 밖에서 PID 로 검사
+
+| 모듈 | 탐지 대상 | 노리는 치트 |
+|------|-----------|-------------|
+| **ProcessMonitor** | 블랙리스트 외부 도구(CE/x64dbg/IDA 등) 이름·SHA-256 | external R/W·디버깅 도구 |
+| **InjectionScanner** | 비신뢰/미서명/신규 DLL, 수동 매핑(reflective) 영역 | DLL 인젝션·수동 매핑 |
+| **HookScanner** | 시스템 API 익스포트 인라인 후크 + 메인 모듈 IAT 후크 | MinHook/Detours 인라인·IAT 후크 |
+| **IntegrityScanner** | 라이브 `.text` vs 디스크 원본 PE 비교(ASLR 보정) | Track 2 NOP 패치·MidHook 트램펄린 |
+
+네 모듈은 `ac_external_monitor` 실행파일로 **통합**되어 단일 스케줄러/큐로 동작합니다.
+자세한 내용은 [`Anticheat_client/External/README.md`](Anticheat_client/External/README.md) 참고.
+
+### 안티디버깅 모듈
+
+PID 대상 디버거 탐지(원격 디버거·디버그 포트/오브젝트·PEB 플래그·INT3/하드웨어
+브레이크포인트·시간 기반 정체 등). 자세한 내용은
+[`Anticheat_client/Module_Anti_Debugging/README.md`](Anticheat_client/Module_Anti_Debugging/README.md) 참고.
 
 ---
 

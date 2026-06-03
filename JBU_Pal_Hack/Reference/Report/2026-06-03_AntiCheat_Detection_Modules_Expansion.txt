@@ -1,0 +1,245 @@
+═══════════════════════════════════════════════════════════════════════════════
+ JBU Palworld Anti-Cheat — 후킹 탐지 / 무결성 검사 모듈 추가 및 통합
+ 작성일: 2026-06-03
+ 작업 브랜치: Dev-Hack-Jihoon
+ 작성자: Jihoon (with Claude Opus 4.8)
+═══════════════════════════════════════════════════════════════════════════════
+
+
+[1] 작업 목표
+───────────────────────────────────────────────────────────────────────────────
+Anticheat_client 의 기존 탐지 모듈 위에 다음 두 종을 신규 추가하고, 기존 모듈과
+하나의 실행파일로 통합한다. 모두 팰월드(UE5 x64 Shipping) 프로세스를 대상으로
+하는 외부 감시(out-of-process) 방식이다.
+
+  (A) 후킹 탐지 (HookScanner)
+      - 시스템 API 익스포트 인라인 후크(트램펄린/디투어)
+      - 게임 메인 모듈 IAT(Import Address Table) 후크
+      JBU_Pal_Hack 이 MinHook 래퍼(HookManager)로 인라인 후크를 거는 것을 노림.
+
+  (B) 무결성 검사 (IntegrityScanner)
+      - 라이브 .text(코드) vs 디스크 원본 PE 의 바이트 단위 비교(ASLR 보정)
+      Track 2 의 AOB+NOP 패치, MidHook(34바이트 트램펄린)이 게임 코드 바이트를
+      직접 고치는 것을 노림.
+
+  (C) 통합
+      - 기존 ProcessMonitor / InjectionScanner + 신규 HookScanner /
+        IntegrityScanner 4종을 단일 DetectionEventQueue + 미니 스케줄러로 묶어
+        ac_external_monitor 실행파일로 통합.
+
+  ※ "DLL 인젝션 탐지"는 이미 InjectionScanner(External, 기존)로 구현되어 있어
+    신규 작성이 아니라 통합 대상에 포함하는 것으로 정리.
+
+
+[2] 기존 구조 분석 결과
+───────────────────────────────────────────────────────────────────────────────
+
+[2-1] 공통 인터페이스 — Module_Process_Watcher/IDetectionModule.h
+  - 모든 탐지 모듈은 IDetectionModule 을 구현:
+      Initialize(DetectionEventQueue*) / Tick() / Shutdown()
+      Name() / Kind() / PollIntervalMs()
+  - 결과는 단일 DetectionEventQueue(thread-safe)로 Push.
+      DetectionEvent { moduleName, detectionType, Severity, description,
+                       evidence, timestampMs }
+  - ModuleKind: Polling(주기적 Tick) / EventTrigger(후킹·콜백).
+    신규 두 모듈은 모두 Polling.
+  → 신규 모듈은 이 인터페이스만 맞추면 스케줄러·큐·서버 송신 레이어를 그대로
+    재사용. 별도 배선 불필요.
+
+[2-2] 공용 헬퍼 — Common/AcCommon.h (헤더 전용, namespace ac)
+  외부 감시 모듈이 공유하는 도구가 이미 마련되어 있어 신규 모듈이 곧바로 활용:
+    - 프로세스/모듈 열거 : TargetSpec::Resolve, EnumRemoteModules, ModuleOf
+    - 원격 메모리 읽기   : ReadRemote, ReadRemoteT<T>, ReadRemoteCStr, EnumRegions
+    - 디스크 PE 파싱     : DiskImage (Open/Valid/RvaPtr/Sections/PreferredBase)
+        · BuildExportMap()  → (이름, RVA) 목록   [후킹: 원본 프롤로그 확보]
+        · BuildRelocs()     → 재배치 목록         [무결성: ASLR 차이 제외]
+        · RangeIsRelocated()→ 구간 재배치 여부
+    - 라이브 PE 정보     : ReadRemotePeInfo (Import/Export 디렉터리 RVA)
+        [후킹: IAT 위치]
+    - 인라인 후크 식별   : ClassifyJumpStub(b, n)
+        E9 rel32 / FF25 [rip+x] / EB short / push-ret / mov rax;jmp rax /
+        mov r11;jmp r11
+  → AcCommon.h 가 사실상 후킹·무결성 모듈을 염두에 두고 미리 작성된 토대였음.
+    신규 모듈은 새 저수준 코드를 거의 추가하지 않고 조립 수준으로 구현 가능.
+
+[2-3] 기존 모듈(통합 대상)
+    ProcessMonitor   (Module_Process_Watcher) : 블랙리스트 외부 도구 이름·SHA-256
+    InjectionScanner (External)               : 비신뢰/미서명/신규 DLL, 수동 매핑
+
+
+[3] 신규 모듈 설계 및 구현
+───────────────────────────────────────────────────────────────────────────────
+
+[3-1] External/Module_Hook_Scanner — HookScannerModule.{h,cpp}  ← 신규
+
+  (a) 익스포트 인라인 후크 검사 (ScanExportHooks / ScanModuleExports)
+      - 대상 모듈(워치리스트)별로 디스크 원본을 DiskImage 로 열고 BuildExportMap.
+      - 각 익스포트의 프롤로그 16바이트를 라이브(원격) vs 디스크 비교.
+      - 차이 바이트 중 BuildRelocs 로 재배치되는 위치는 제외(ASLR 정상 차이).
+      - 데이터 익스포트 오탐 방지: RVA 가 실행 가능 섹션(IMAGE_SCN_MEM_EXECUTE)
+        에 있을 때만 후크로 판정.
+      - 판정:
+          첫 명령이 점프 스텁(ClassifyJumpStub) → Hook.InlineExport (Critical)
+            + DescribeJumpTarget 로 점프 목적지 해석:
+                목적지가 로드된 모듈 안 → "module=..."
+                목적지가 로드 모듈 밖   → "UNBACKED/private memory"
+                  (= 사적 할당 트램펄린, 인젝션 코드의 강한 증거)
+          점프는 아니나 (재배치 아닌) 바이트 변조 → Hook.ProloguePatch (High)
+      - 기본 워치리스트(핫 함수 위주, 전체 스캔은 옵션):
+          ntdll      : NtProtect/Write/Read/AllocateVirtualMemory,
+                       NtCreateThreadEx, NtOpenProcess, NtQueryInformationProcess,
+                       NtMapViewOfSection, NtResumeThread, LdrLoadDll ...
+          kernelbase : VirtualProtect/Alloc, Write/ReadProcessMemory,
+                       GetProcAddress, OpenProcess, IsDebuggerPresent ...
+          kernel32   : LoadLibrary*, GetProcAddress, VirtualProtect/Alloc,
+                       Write/ReadProcessMemory, CreateRemoteThread, OpenProcess
+          user32     : SetWindowsHookEx*, GetAsyncKeyState, CallNextHookEx ...
+
+  (b) IAT 후크 검사 (ScanIatHooks)
+      - 메인 모듈의 ReadRemotePeInfo 로 Import 디렉터리 위치 확보.
+      - IMAGE_IMPORT_DESCRIPTOR 배열 순회 → 각 DLL 의 FirstThunk(IAT) 순회.
+      - 각 IAT 엔트리(실제 함수 주소)가 "로드된 어떤 모듈에도 속하지 않는"
+        메모리를 가리키면 → Hook.IAT (Critical).
+      - 오탐 방지 설계: forward 익스포트/ApiSet 으로 import 명이 가리키는 DLL 과
+        실제 구현 DLL 이 다른 정상 케이스(예: kernel32→kernelbase)를 후크로
+        보지 않도록, "모듈 밖(UNBACKED) 포인터"만 신고. 모듈 간 이동은 무시.
+
+  (c) 한계(코드 주석·README 명시)
+      - DX11 Present(Kiero) 류 vtable 후크는 .rdata 의 함수 포인터를 바꾸므로
+        익스포트/.text 비교로는 잡히지 않음 → 인프로세스 모듈 필요.
+      - 외부 RPM 이라 인젝터가 먼저 후킹하면 일부 타이밍을 놓칠 수 있음.
+
+  설정 API: SetTargetImageName / SetPollInterval(기본 5s) /
+            EnableExportHookScan / EnableIatHookScan / EnableScanAllExports /
+            AddWatchedModule(name, {funcs...})
+
+[3-2] External/Module_Integrity_Scanner — IntegrityScannerModule.{h,cpp}  ← 신규
+
+  검사 흐름 (ScanModule):
+    1) 대상 모듈(기본: 게임 메인 exe)의 디스크 원본을 DiskImage 로 열기.
+    2) delta = live_base - preferred_base. delta!=0 이면 BuildRelocs.
+    3) 실행 가능 섹션(.text 등)마다 cmpLen = min(VirtualSize, SizeOfRawData):
+       - 64KB 청크로 원격을 읽어 디스크 원본과 바이트 비교.
+       - 차이 바이트 중 재배치 위치(RangeIsRelocated)는 ASLR 정상 차이로 제외.
+       - 섹션당 차이 바이트 상한(200,000) 초과 시 폭주로 보고 개별 신고 생략
+         → Integrity.MassMismatch (패킹/언팩 또는 손상 가능).
+    4) 인접 차이 오프셋을 구간으로 병합(간격 8 이하 병합).
+    5) 구간별 라이브 바이트(최대 16)를 보고 분류해 신고:
+         전부 0x90              → "NOP patch (instruction disabled)"  (High)
+         점프 스텁(ClassifyJump)→ "inline hook / trampoline"          (Critical)
+         그 외                  → "code modification"                 (High)
+       → Integrity.CodePatch (va/rva/len/disk[..]/live[..]/kind 근거 포함)
+    6) 모듈당 신고 구간 상한(기본 32) 초과 시 Integrity.RegionsTruncated.
+
+  설정 API: SetTargetImageName / SetPollInterval(기본 8s) /
+            AddModule(name, 시스템 DLL 추가 검증) / SetMaxRegionsPerModule
+
+  한계(명시): vtable(.rdata) 후크는 재배치로 가려져 미검출. .text 전체 RPM
+            비용이 커 폴링 주기를 넉넉히(8s) 둠. 게임 셀프 패치/언팩 시 오탐.
+
+[3-3] External/Runner/main.cpp + External/CMakeLists.txt  ← 신규 (통합)
+  - DetectionEventQueue 1개를 4개 모듈이 공유.
+      ProcessMonitor(2s) / InjectionScanner(4s) / HookScanner(5s) /
+      IntegrityScanner(8s) — 모두 Polling.
+  - 미니 스케줄러: 모듈별 nextDueMs 추적, PollIntervalMs 주기로 Tick().
+  - 큐 소비 루프: [SEVERITY] Module | DetectionType | evidence 콘솔 출력
+    (실 운영에서는 서버 REST 송신 레이어로 교체).
+  - 대상 프로세스명 kPalworldImage = "palworld-win64-shipping.exe".
+  - Ctrl+C 핸들러로 정상 종료 + 모든 모듈 Shutdown().
+  - CMake: ac_external_monitor 단일 타깃. 4개 모듈 .cpp + Runner.
+      include dir: ../Common, ../Module_Process_Watcher,
+                   External 의 3개 모듈 폴더.
+      link: wintrust(서명 검증, InjectionScanner) + bcrypt(SHA-256, ProcessMonitor)
+      옵션: /W4 /utf-8 /permissive-, UNICODE/_UNICODE.
+
+
+[4] 탐지 ↔ 치트 기법 대응 매핑
+───────────────────────────────────────────────────────────────────────────────
+  치트 기법(JBU_Pal_Hack)                     ↔  탐지 모듈 / 시그널
+  ─────────────────────────────────────────────────────────────────────────────
+  DLL 인젝션(LoadLibrary)                     →  InjectionScanner
+                                                 (UntrustedPath / Unsigned / NewModule)
+  수동 매핑(Reflective)                        →  InjectionScanner
+                                                 (ManualMapPE / PrivateExec)
+  MinHook 인라인 후크 — 시스템 API            →  HookScanner.Hook.InlineExport
+  MinHook 인라인 후크 — 게임 함수(.text)      →  IntegrityScanner.CodePatch(inline hook)
+  MidHook 트램펄린(34B, 온도 등)              →  IntegrityScanner.CodePatch(inline hook)
+  Track 2 AOB + NOP 패치(스태미나/탄약/...)   →  IntegrityScanner.CodePatch(NOP patch)
+  IAT 가로채기                                →  HookScanner.Hook.IAT
+  external R/W·디버거(CE/x64dbg)              →  ProcessMonitor (이름/해시)
+  DX11 Present vtable 후크(Kiero)             →  (미커버 — [6] 향후 인프로세스 모듈)
+
+  ※ Track 1(메모리 폴링·직접 쓰기)은 코드 바이트를 바꾸지 않으므로 본 모듈군의
+    직접 대상이 아님(값 무결성/서버 권위 검증 영역).
+
+
+[5] 빌드 / 검증
+───────────────────────────────────────────────────────────────────────────────
+  구성/빌드 (PowerShell):
+    cmake -S Anticheat_client/External -B <build> -G "Visual Studio 17 2022" -A x64
+    cmake --build <build> --config Debug
+
+  결과:
+    - CMake 구성 성공 (MSVC 19.43, Windows SDK 10.0.22621).
+    - /W4 클린 빌드 — 컴파일 경고/에러 0건.
+    - 산출물 ac_external_monitor.exe (≈858KB) 생성.
+    - 스모크 실행: 대상 미실행 상태에서 즉시 종료/크래시 없이 스케줄러 루프
+      정상 진입 확인(폴링 모듈은 대상 부재 시 no-op).
+
+  ※ 보호된 게임 프로세스를 OpenProcess(PROCESS_VM_READ) 로 열려면 관리자 권한
+    필요. 권한 부족 시 모듈은 다음 틱에 조용히 재시도.
+
+
+[6] 한계 및 향후 작업 / TODO
+───────────────────────────────────────────────────────────────────────────────
+  - vtable / DX11 Present 후크 탐지:
+    .rdata 포인터 변조는 외부 .text/익스포트 비교로 미검출. 인프로세스(게임 내)
+    모듈에서 스왑체인 vtable 을 직접 읽어 각 엔트리가 d3d11/dxgi 범위 안인지
+    검사하는 보완 모듈이 필요. (EventTrigger 종류로 추가 가능.)
+
+  - 무결성 검사 비용 최적화:
+    매 틱 .text 전체 RPM 대신, 섹션 SHA-256 베이스라인을 한 번 잡고 해시만
+    비교하거나, 구간 샘플링/변경 페이지 우선 검사로 전환.
+
+  - 후킹 탐지 정확도:
+    EnableScanAllExports(true) 시 ntdll 등 전체 익스포트로 커버리지 확대.
+    핫리스트는 빠르지만 미등록 함수 후킹을 놓침 → 주기 분리(전체 스캔은 저빈도).
+
+  - 서버 교차 검증 연동:
+    현재 큐 소비는 콘솔 출력. Anticheat_server REST API 로 DetectionEvent 를
+    송신하는 Reporter 레이어 추가 → 단일 신호가 아닌 다중 신호 가중 합산
+    (10주차 원칙: 다중 검사 + 검사 지점 분산 + 서버 교차 검증).
+
+  - 안티디버깅 모듈 통합:
+    Module_Anti_Debugging 은 현재 독립 실행형(PID 인자). IDetectionModule 로
+    래핑하면 ac_external_monitor 스케줄러에 EventTrigger/Polling 으로 합류 가능.
+
+  - 베이스라인 신뢰성:
+    HookScanner/IntegrityScanner 는 "디스크 원본"을 신뢰. 디스크 파일까지
+    교체하는 공격(파일 패치)은 별도 서명/해시 화이트리스트로 보완 필요.
+
+
+[7] 검증 체크리스트 (실행 시점에 확인할 항목)
+───────────────────────────────────────────────────────────────────────────────
+  [ ] 관리자 권한으로 ac_external_monitor.exe 실행 → 배너(target/modules) 출력
+  [ ] 팰월드 미실행 상태 → 4개 모듈 no-op, 크래시 없음
+  [ ] 팰월드 실행 후 → 모듈별 첫 세션 베이스라인 수립(중복 신고 없음)
+  [ ] [ProcessMonitor] Cheat Engine 실행 → ProcessBlacklist.Name (Critical)
+  [ ] [InjectionScanner] JBU_Pal_Hack DLL 인젝션 →
+      Injection.UntrustedPath / Unsigned / NewModule 신고
+  [ ] [InjectionScanner] 수동 매핑 인젝터 → Injection.ManualMapPE / PrivateExec
+  [ ] [HookScanner] MinHook 으로 시스템 API(예: NtProtectVirtualMemory) 후킹 →
+      Hook.InlineExport (Critical) + dest=UNBACKED 표기
+  [ ] [HookScanner] IAT 리다이렉션 → Hook.IAT (Critical)
+  [ ] [HookScanner] 후크 미설치 시 오탐 0건 (정상 시스템에서 clean)
+  [ ] [IntegrityScanner] Track 2 토글(스태미나 NOP) ON →
+      Integrity.CodePatch kind=NOP patch
+  [ ] [IntegrityScanner] MidHook(온도) ON → kind=inline hook / trampoline
+  [ ] [IntegrityScanner] 치트 미적용 시 오탐 0건 (재배치 보정으로 .text clean)
+  [ ] 동일 변조 반복 틱에서 중복 신고 없음(reported_ 캐시 동작)
+  [ ] 게임 재시작(PID 변경) 시 세션·캐시 초기화 후 재베이스라인
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 끝.
+═══════════════════════════════════════════════════════════════════════════════
