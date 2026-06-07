@@ -6,6 +6,8 @@ add_library(${PROJECT_NAME} SHARED
     # Core
     Core/dllmain.cpp
     Core/HackMain.cpp
+    Core/Logger.cpp           # 파일 로그 + std::cout tee (크래시 디버깅)
+    Core/CrashHandler.cpp     # VEH 로 치명 예외 가로채 모듈+RVA+레지스터 기록
     # GUI
     GUI/Menu.cpp
     GUI/Overlay.cpp
@@ -51,6 +53,11 @@ add_library(${PROJECT_NAME} SHARED
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
 target_compile_definitions(${PROJECT_NAME} PRIVATE _CRT_SECURE_NO_WARNINGS WIN32_LEAN_AND_MEAN)
+# 소스 한국어 주석을 위해 UTF-8 강제 — 미적용 시 cp949 환경에서 한국어 주석이
+# 다음 줄 토큰을 먹어 식별자 미발견 같은 가짜 오류가 발생함.
+if(MSVC)
+    target_compile_options(${PROJECT_NAME} PRIVATE /utf-8)
+endif()
 
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE
