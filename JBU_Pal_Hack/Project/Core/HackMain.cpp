@@ -27,6 +27,11 @@
 #include "../Cheats/HookCheats/ItemSlotCaptureHook.h"
 #include "../Cheats/HookCheats/TechPointCaptureHook.h"
 #include "../Cheats/HookCheats/ExpPtrCaptureHook.h"
+// Track 2 / P2 — 조건분기 강제 / 명령어 주입 후킹들 (토글)
+#include "../Cheats/HookCheats/BuildAnywhereHook.h"
+#include "../Cheats/HookCheats/CanCatchBossHook.h"
+#include "../Cheats/HookCheats/PalStatsCreationHook.h"
+#include "../Cheats/HookCheats/ResearchIncreaseHook.h"
 
 namespace HackMain
 {
@@ -67,6 +72,11 @@ namespace HackMain
         ItemSlotCaptureHook::Install();
         TechPointCaptureHook::Install();
         ExpPtrCaptureHook::Install();
+        // P2 — 조건분기 강제 / 명령어 주입 후킹 (토글)
+        BuildAnywhereHook::Install();
+        CanCatchBossHook::Install();
+        PalStatsCreationHook::Install();
+        ResearchIncreaseHook::Install();
 
         // 3. Initialize GUI Overlay (ImGui Render Hook)
         Overlay::Initialize();
@@ -101,6 +111,10 @@ namespace HackMain
         ItemSlotCaptureHook::Shutdown();
         TechPointCaptureHook::Shutdown();
         ExpPtrCaptureHook::Shutdown();
+        BuildAnywhereHook::Shutdown();
+        CanCatchBossHook::Shutdown();
+        PalStatsCreationHook::Shutdown();
+        ResearchIncreaseHook::Shutdown();
         HookManager::Shutdown();
         Overlay::Shutdown();
 
@@ -137,6 +151,10 @@ namespace HackMain
             WriteItemsHook::Tick();
             DurabilityWriteHook::Tick();
             AmmoDecreaseHook::Tick();
+            BuildAnywhereHook::Tick();
+            CanCatchBossHook::Tick();
+            PalStatsCreationHook::Tick();
+            ResearchIncreaseHook::Tick();
 
             Sleep(10); // Prevent CPU maxout
         }

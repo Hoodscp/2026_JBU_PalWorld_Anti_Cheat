@@ -42,6 +42,11 @@ add_library(${PROJECT_NAME} SHARED
     Cheats/HookCheats/ItemSlotCaptureHook.cpp
     Cheats/HookCheats/TechPointCaptureHook.cpp
     Cheats/HookCheats/ExpPtrCaptureHook.cpp
+    # P2 조건분기 강제 / 명령어 주입 후킹
+    Cheats/HookCheats/BuildAnywhereHook.cpp
+    Cheats/HookCheats/CanCatchBossHook.cpp
+    Cheats/HookCheats/PalStatsCreationHook.cpp
+    Cheats/HookCheats/ResearchIncreaseHook.cpp
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)

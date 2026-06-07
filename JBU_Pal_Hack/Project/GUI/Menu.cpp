@@ -102,11 +102,18 @@ namespace Menu
     // ─────────────────────────────────────────────────────────────────
     static void DrawTechTab()
     {
-        ImGui::SeparatorText("Toggles");
+        ImGui::SeparatorText("Toggles (Track 1: Memory polling)");
         ImGui::Checkbox("Free Technology Points",      &Config.bFreeTechPoint);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("TechnologyPoint 를 9999 로 유지");
         ImGui::Checkbox("Free Boss Technology Points", &Config.bFreeBossTechPoint);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("BossTechnologyPoint(0x154) 를 9999 로 유지");
+
+        ImGui::SeparatorText("AOB Hooks (Track 2: 연구 진행도 가속)");
+        ImGui::Checkbox("Hook: Quick Research (mulss 주입)", &Config.bHookQuickResearch);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "addss xmm6, [rdi+0x14] 직후 mulss xmm6, xmm6 주입 →\n"
+            "매 tick 진행도가 제곱 누적되어 호출 몇 회면 한 연구 완료.\n"
+            "Free Tech Points 와 조합하면 즉시 모든 연구 해금 가능.");
 
         ImGui::SeparatorText("Live Stats");
         int tp  = SDK::GetLocalTechnologyPoint();
@@ -176,11 +183,22 @@ namespace Menu
                                "Slot[%d] occupied.", slot);
         }
 
-        ImGui::SeparatorText("Toggles");
+        ImGui::SeparatorText("Toggles (Track 1: 선택 슬롯에 매 프레임 적용)");
         ImGui::Checkbox("Pal God Mode (HP = 1e9)", &Config.bPalGodMode);
         ImGui::Checkbox("Pal Max Sanity",          &Config.bPalMaxSanity);
         ImGui::Checkbox("Pal Infinite MP",         &Config.bPalInfiniteMP);
         ImGui::Checkbox("Pal Max Talents (IV)",    &Config.bPalMaxTalents);
+
+        ImGui::SeparatorText("AOB Hooks (Track 2: 새로 잡는/만드는 펄에 영향)");
+        ImGui::Checkbox("Hook: Perfect Pal Stats on Creation", &Config.bHookPerfectPalStats);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "mov r14d, 0x65 직전에 mov edi, 0x64 주입 →\n"
+            "새로 생성/포획되는 펄의 HP/근접/원거리/방어 IV 가 전부 100.\n"
+            "이미 잡힌 펄에는 영향 없음 (그쪽은 위 Pal Max Talents 사용).");
+        ImGui::Checkbox("Hook: Can Catch Boss Pal (flag 강제 0)", &Config.bHookCanCatchBoss);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "보스/머천트 캐릭터 데이터의 [rax+0x598] 차단 플래그를 cmp 직전에\n"
+            "0 으로 강제 → 보스/머천트도 일반 펄과 동일하게 페일 스피어 포획.");
 
         ImGui::Checkbox("Pal Force Level", &Config.bPalForceLevel);
         ImGui::SameLine();
@@ -224,11 +242,16 @@ namespace Menu
     // ─────────────────────────────────────────────────────────────────
     static void DrawEnvironmentTab()
     {
-        ImGui::SeparatorText("Toggles");
+        ImGui::SeparatorText("AOB Hooks (Track 2: 환경/건축 분기 조작)");
         ImGui::Checkbox("Always Normal Temperature", &Config.bForceNormalTemp);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip(
             "온도 상태 변경 명령(0x138 멤버 write)을 가로채 새 값을 0(Normal)으로 강제합니다.\n"
             "지역 진입/장비 변경 등으로 온도 단계가 바뀌려 할 때만 동작 → 매우 가벼움.");
+        ImGui::Checkbox("Can Build Anywhere (cmp 통과 강제)", &Config.bHookBuildAnywhere);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "cmp byte ptr [rcx+0xE4], sil 직전에 같은 메모리에 sil 을 write →\n"
+            "건축 가용성 검사가 항상 ZF=1 로 통과 → 적진/물 위 등 어디든 건축.\n"
+            "버그성 배치는 영구 저장 시 손상될 수 있어 주의.");
     }
 
     // ─────────────────────────────────────────────────────────────────

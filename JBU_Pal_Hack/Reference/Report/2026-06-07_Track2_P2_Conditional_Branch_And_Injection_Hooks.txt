@@ -1,0 +1,265 @@
+═══════════════════════════════════════════════════════════════════════════════
+ JBU Palworld Internal Cheat — Track 2 / P2 AOB 후크 4종 추가
+   (조건분기 강제 2종 + 명령어 주입 2종)
+ 작성일: 2026-06-07
+ 작업 브랜치: Dev-Hack-Jihoon
+ 작성자: Jihoon (with Claude Opus 4.7)
+═══════════════════════════════════════════════════════════════════════════════
+
+
+[1] 작업 목표
+───────────────────────────────────────────────────────────────────────────────
+2026-05-07 의 AOB 패턴 / CT 분석 문서
+(Reference/mdfiles/2026-05-07_AOB_Patterns_CT_Analysis.md) §6 액션 플랜의
+"남은" 카테고리를 본 프로젝트 코드베이스에 흡수한다.
+
+  현재 상태 (Signatures.h + HackMain 기준):
+    - Track 2 / P0 NOP 패치 6종 — Stamina/Hunger/FoodTimer/Items/Durability/Ammo
+    - Track 2 / P1 포인터 캡처 4종 — Player/ItemSlot/TechPoint/Exp
+    - Track 2 / Temperature 14B MidHook 1종
+
+  추가 대상 (이번 작업):
+    Track 2 / P2 — md §3 패턴 C(조건분기 강제) + 패턴 B(레지스터 강제값) /
+                   패턴 A 의 변형(원본 직후 명령어 주입)
+    Signatures.h 의 TODO 주석 3줄 중 "buildableTest / canCatchBossPal /
+    palStatsCreation / researchIncrease" 4종을 신규 구현.
+
+  (의도적으로 제외):
+    - mobsTakeDamgBossF 다중-비트 토글  → 별도 보고로 분리 (체력/데미지 분기는
+      saveSpace 비트맵 5종 동시제어라 Menu UI 도 함께 설계 필요)
+    - movCaptureChance / getCaptureStrength → sig 가 ret 부근까지 와일드카드
+      길어 brittle. AOB 재추출 후 별도 진행.
+
+
+[2] AOB 분석 결과 — 신규 4종
+───────────────────────────────────────────────────────────────────────────────
+
+[2-1] BuildableTest (Can Build Anywhere)  ─ 조건분기 강제
+
+  CT 원문 sig: 40 38 B1 E4 00 00 00   (7바이트)
+    40 = REX                                  (sil 사용 위해 필수)
+    38 B1 E4 00 00 00 = cmp byte ptr [rcx+0xE4], sil
+
+  기존 게임 동작: 빌드 가용성 검사. ZF=1 일 때만 통과.
+  변조 설계 (MidHook bodyEnabled):
+    1) mov byte ptr [rcx+0xE4], sil    ; 메모리를 sil 값으로 강제 동기화 (7B)
+    2) cmp byte ptr [rcx+0xE4], sil    ; 원본 재실행 — ZF=1 보장 (7B)
+  → 총 14B. patchLen = 원본 7B.
+
+[2-2] CanCatchBossPal  ─ 조건분기 강제
+
+  CT 원문 sig: 48 8B 83 30 06 00 00 80 B8 98 05 00 00 00   (14바이트)
+    48 8B 83 30 06 00 00 = mov rax, [rbx+0x630]          (보스 데이터 ptr)
+    80 B8 98 05 00 00 00 = cmp byte ptr [rax+0x598], 0   (보스 차단 플래그, imm8=0)
+
+  기존 게임 동작: [rax+0x598] 가 0 이 아니면 페일 스피어로 보스/머천트 포획 차단.
+  변조 설계 (MidHook bodyEnabled):
+    1) mov rax, [rbx+0x630]                   ; 원본 (7B)
+    2) mov byte ptr [rax+0x598], 0            ; ★ 차단 플래그 0 강제 주입 (C6 80 ... 00, 8B)
+    3) cmp byte ptr [rax+0x598], 0            ; 원본 재실행 — 이제 항상 ZF=1 (7B)
+  → 총 22B. jeOffsetToDisabled = 22+5 = 27 ≤ 127 (MidHook je rel8 한계 통과).
+
+[2-3] PalStatsCreation (Perfect IV)  ─ 레지스터 강제값 주입
+
+  CT 원문 sig (uniqueness 포함): 41 BE 65 00 00 00 44 2B F7 45 85 F6 0F  (13B)
+  패치 사이트(원본 6바이트, 첫 단일 명령어):
+    41 BE 65 00 00 00 = mov r14d, 0x65
+    (이후 명령어 44 2B F7 = sub r14d, edi 가 edi 를 IV 산정 기준값으로 사용)
+
+  기존 게임 동작: edi 에 들어있는 정상 분포값(50 등) 기준으로 IV 계산.
+  변조 설계 (MidHook bodyEnabled):
+    1) mov edi, 0x64           ; ★ 강제 주입 — IV = 100 (BF 64 00 00 00, 5B)
+    2) mov r14d, 0x65          ; 원본 재실행 (6B)
+  → 총 11B. 직후의 sub r14d, edi 가 edi=0x64 로 평가되어
+    HP/근접/원거리/방어 IV 모두 100.
+  적용 범위: 새로 생성/포획되는 펄 한정. 이미 잡힌 펄은 기존 SetPalTalents
+  (Track 1) 가 담당.
+
+[2-4] ResearchIncrease (Quick Research)  ─ 명령어 추가 주입
+
+  CT 원문 sig: F3 0F 58 77 14   (5바이트, 정확히 1 명령어)
+    F3 0F 58 77 14 = addss xmm6, [rdi+0x14]   (연구 진행도 누적)
+
+  기존 게임 동작: 매 tick 작은 float 양만큼 선형 누적.
+  변조 설계 (MidHook bodyEnabled):
+    1) addss xmm6, [rdi+0x14]   ; 원본 재실행 (5B)
+    2) mulss xmm6, xmm6         ; ★ 제곱 누적 주입 (F3 0F 59 F6, 4B)
+  → 총 9B. patchLen = 5B (정확히 jmp 공간).
+  진행도가 (x + δ)² → x² + 2xδ + δ² 패턴으로 폭증해 몇 호출이면 한 연구 완료.
+
+
+[3] 코드 변경 내역
+───────────────────────────────────────────────────────────────────────────────
+
+[3-1] Project/SDK/Signatures.h
+  - P2 섹션 신설:
+      BuildableTest      (cmp 분기 강제)
+      CanCatchBossPal    (보스 차단 플래그 0 강제)
+      PalStatsCreation   (mov edi, 0x64 주입)
+      ResearchIncrease   (mulss xmm6, xmm6 주입)
+  - 기존 TODO 주석 갱신: 이번에 구현한 4종 제외, 향후 분석 대상으로
+      mobsTakeDamgBossF / getCaptureStrength / movCaptureChance /
+      arenaRPGainMult / writeMachineHealth 4종 명시.
+  - 각 시그니처 위에 패치 설계(bodyEnabled/bodyDisabled 바이트 의도) 주석.
+
+[3-2] Project/Cheats/HookCheats/  ← 신규 8 파일
+  파일 구성은 기존 패턴(예: DurabilityWriteHook) 그대로:
+    {Name}Hook.h       Install / Tick / Shutdown 3-함수 인터페이스
+    {Name}Hook.cpp     bodyEnabled / bodyDisabled 바이트 정의 +
+                       MidHook::Install / SetEnabled / Shutdown 위임
+
+  신규 후킹 모듈:
+    BuildAnywhereHook         patchLen=7,  bodyEnabled=14B, bodyDisabled=7B
+    CanCatchBossHook          patchLen=14, bodyEnabled=22B, bodyDisabled=14B
+    PalStatsCreationHook      patchLen=6,  bodyEnabled=11B, bodyDisabled=6B
+    ResearchIncreaseHook      patchLen=5,  bodyEnabled=9B,  bodyDisabled=5B
+
+  - MidHook 의 je rel8 한계(jeOffsetToDisabled ≤ 127) 통과 확인:
+      14+5=19, 22+5=27, 11+5=16, 9+5=14  — 모두 안전.
+  - patchLen 은 사이트 다음 명령어를 침범하지 않는 길이만 사용 (각 후크 파일
+    헤더 주석에 원본 디스어셈블 인라인 표기).
+
+[3-3] Project/GUI/Menu.h
+  - Settings 구조체 확장:
+      bool bHookBuildAnywhere    = false;
+      bool bHookCanCatchBoss     = false;
+      bool bHookPerfectPalStats  = false;
+      bool bHookQuickResearch    = false;
+  - 기존 P0 토글 6종 직후 배치하여 "Track 2 / P2 AOB 조건분기 강제 + 명령어
+    주입" 그룹 주석으로 묶음.
+
+[3-4] Project/GUI/Menu.cpp
+  - DrawTechTab:
+      "AOB Hooks (Track 2: 연구 진행도 가속)" 섹션 추가
+      ☑ Hook: Quick Research (mulss 주입)   + 툴팁
+      기존 "Toggles" → "Toggles (Track 1: Memory polling)" 로 라벨 명시.
+  - DrawPalsTab:
+      "AOB Hooks (Track 2: 새로 잡는/만드는 펄에 영향)" 섹션 추가
+      ☑ Hook: Perfect Pal Stats on Creation   + 툴팁
+      ☑ Hook: Can Catch Boss Pal (flag 강제 0) + 툴팁
+      기존 Track 1 토글 라벨도 "선택 슬롯에 매 프레임 적용" 명시.
+  - DrawEnvironmentTab:
+      "AOB Hooks (Track 2: 환경/건축 분기 조작)" 으로 섹션 제목 변경
+      ☑ Can Build Anywhere (cmp 통과 강제)   + 툴팁
+
+[3-5] Project/Core/HackMain.cpp
+  - include 4줄 추가 (P2 후킹 헤더)
+  - Initialize():    P1 캡처 후킹 직후 P2 4종 Install() 4줄
+  - Shutdown():      P1 캡처 Shutdown 직후 P2 4종 Shutdown() 4줄
+  - MainLoop():      Temperature/P0 Tick 직후 P2 4종 Tick() 4줄
+
+[3-6] Project/CMakeLists.txt
+  - HookCheats 소스 목록에 P2 4 .cpp 등록 + 그룹 주석 추가.
+
+
+[4] 헬퍼 인터페이스 활용 — 새 저수준 코드 0줄
+───────────────────────────────────────────────────────────────────────────────
+신규 4개 모듈 모두 기존 헬퍼 그대로 사용:
+
+  Memory/MidHook.{h,cpp}   ← bodyEnabled/bodyDisabled 양쪽 분기 트램폴린
+  SDK/Signatures.h         ← AOB 문자열
+  GUI/Menu.h               ← 토글 bool
+
+신규 vendoring·신규 트램폴린 생성기·신규 NopHook 변종 모두 불필요. 이는
+MidHook 의 일반화 설계(2026-05-13 보고서 §3 헬퍼화)가 의도한 대로
+"한 후킹 = 한 파일 = .h 3함수 + .cpp 약 30줄" 비용으로 신규 후크 추가가
+정착되었음을 보여준다.
+
+
+[5] 안전성 / 안티치트 고려
+───────────────────────────────────────────────────────────────────────────────
+  - bodyEnabled 안에 RIP-relative / 짧은 점프 0개. (모두 mov/cmp 변형 + 상수
+    imm8/imm32 — 위치 의존 명령어 아님.) 트램폴린 재배치 후에도 안전.
+  - 모든 후크는 sig 빈 문자열 / 패턴 미발견 시 Install 이 nullptr 반환 →
+    Tick 의 SetEnabled 도 no-op (MidHook::SetEnabled 가 null guard) →
+    DLL 만 인젝션하고 toggle 만 켜도 크래시하지 않음.
+  - Shutdown 은 HookManager::Shutdown 이전에 호출되도록 HackMain 에 명시 배치.
+    누락 시 DLL 언로드 후 dangling jmp 위험은 기존 P0/P1 후크와 동일.
+  - CanCatchBoss: `[rax+0x598]` 메모리를 0 으로 write 함. 이 데이터 객체는
+    포획 시도 시점에 한 번만 평가되므로, 토글 OFF 후 다음 보스 진입 시
+    원래 값(보호 플래그)으로 자연 복구된다.
+  - PalStatsCreation: edi 가 IV 산정의 한 입력일 뿐, 다른 입력(레벨/종족
+    base) 까지 100 으로 만들지는 못함. CT 의 §B 패턴 그대로의 효과 범위.
+  - ResearchIncrease: float 누적이라 큰 값에서 부동소수 정밀도 손실 가능 →
+    한 번 완료 후엔 자동으로 다음 연구로 전환되니 무해.
+  - 본 4종은 모두 게임 실행 코드 .text 를 바이트 단위로 변조 → External
+    의 IntegrityScanner 가 정확히 잡는다. 안티치트 측에선 본 변조도
+    "Track 2 인라인 후크" 카테고리로 동일하게 가시화됨.
+
+
+[6] 빌드 검증
+───────────────────────────────────────────────────────────────────────────────
+  - 신규 4 .cpp 모두 MSVC 19.43 / cxx_std_20 으로 정상 컴파일:
+      BuildAnywhereHook.obj      7,230 B
+      CanCatchBossHook.obj       7,251 B
+      PalStatsCreationHook.obj   7,321 B
+      ResearchIncreaseHook.obj   7,280 B
+    실제 컴파일 오류·치명 경고 0건.
+  - 최종 DLL 링크는 Vendor/{ImGui, MinHook, kiero} 미설치 환경에서는 진행
+    안 됨 (사전 setup_vendor.bat 필요) — 본 작업 이전부터의 빌드 환경 조건
+    그대로이며, 신규 코드와 무관.
+  - C4819 경고는 프로젝트 전 파일 공통(한국어 주석 + CP949) 사전 경고로,
+    신규 4 파일도 동일한 패턴을 따라 추가 경고 발생 없음.
+
+
+[7] 검증 체크리스트 (실행 시점에 확인할 항목)
+───────────────────────────────────────────────────────────────────────────────
+  [ ] setup_vendor.bat 실행 → cmake 재빌드 → JBU_Pal_Hack.dll 산출 확인
+  [ ] DLL 인젝션 → INSERT → 메뉴 정상 표시
+  [ ] 콘솔에 신규 후킹 install 로그 4줄 확인:
+      "[+] BuildAnywhereHook installed (trampoline @ 0x...)"
+      "[+] CanCatchBossHook installed (trampoline @ 0x...)"
+      "[+] PalStatsCreationHook installed (trampoline @ 0x...)"
+      "[+] ResearchIncreaseHook installed (trampoline @ 0x...)"
+      (게임 패치로 AOB 가 깨지면 "pattern not found" 출력 + 다른 후킹은 정상)
+
+  [Environment 탭]
+  [ ] "Can Build Anywhere" ON → 평소 빌드 금지되던 위치(물/적진/타인 영지)에
+      건축 게이지가 녹색으로 표시되어 설치 가능
+  [ ] OFF 후 새로 시도하면 다시 빨간색(불가) — 토글 round-trip 정상
+
+  [Pals 탭]
+  [ ] "Perfect Pal Stats on Creation" ON → 새 펄 포획 시 4종 Talent 가
+      모두 100 으로 들어옴
+  [ ] OFF → 다음 포획에서 일반 분포(랜덤 1~100) 로 복귀
+  [ ] "Can Catch Boss Pal" ON → 보스 펄에 페일 스피어 사용 시 정상 포획률 계산
+      (기존엔 항상 0% 였던 보스/머천트 캐릭터)
+
+  [Tech 탭]
+  [ ] "Quick Research" ON → 연구 진행률 바가 폭증 → 1~2 tick 안에 완료
+  [ ] Free Tech Points 와 조합 시 즉시 전체 트리 해금 가능
+
+  [공통]
+  [ ] 모든 토글 OFF 상태에서 게임 1~2분 플레이 시 평소 동작과 동일
+      (bodyDisabled 분기가 원본 명령어 그대로 실행됨)
+  [ ] DLL 언로드(END 키) 시 정상 종료 — Shutdown 순서로 dangling jmp 없음
+
+
+[8] 향후 작업 / TODO
+───────────────────────────────────────────────────────────────────────────────
+  - mobsTakeDamgBossF (5-비트 토글 동시 제어):
+    saveSpace 비트맵 패턴(md §3 패턴 E). detour 내부에서
+    Menu::Config.bGodMode / bOHK / bImmortalEnemy / bAlmostKill 을 비트마스크로
+    합성해 분기. Menu 측은 Player 탭에 4개 체크박스 그룹으로 노출.
+
+  - getCaptureStrength / movCaptureChance (포획률·강도 부풀림):
+    sig 가 함수 종료부 와일드카드 위주라 AOB 재추출 필요. IDA 로
+    함수 진입점 근처에서 더 안정적인 sig 를 잡아 Signatures.h 갱신 후 추가.
+
+  - arenaRPGainMult (Arena RP 배율):
+    sig 41 8D 0C 1F 0F B6 E8 (7B). lea ecx,[r15+rbx] 직후 shl ecx, N 주입
+    형태로 본 보고서의 ResearchIncrease 와 동일 패턴.
+
+  - writeMachineHealth (One-Hit Machines):
+    sig 88 42 00 ... 88 42 00 → mov [rdx+0], al 3B NOP. patchLen=8 (3+5 다음
+    명령어 보호) NopHook 으로 한 줄 추가 가능.
+
+  - 안티치트 클라이언트 측 카운터 룰 추가:
+    External/Module_Integrity_Scanner 가 이미 .text 변조를 분류해 잡으므로
+    별도 룰 추가 불필요. 단, 본 4종 시그니처 위치를 watchlist 에 명시 등록
+    하면 부분 스캔만으로 즉시 탐지 가능 (성능 개선 차원).
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ 끝.
+═══════════════════════════════════════════════════════════════════════════════

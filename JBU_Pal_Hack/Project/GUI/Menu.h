@@ -35,6 +35,12 @@ namespace Menu
         bool bHookInfDurability     = false; // DurabilityWriteHook: movss [rcx+0x10] 무력화
         bool bHookInfAmmo           = false; // AmmoDecreaseHook: lea/mov 쌍 통째로 NOP
 
+        // ── Track 2 / P2 AOB 조건분기 강제 + 명령어 주입 ──
+        bool bHookBuildAnywhere     = false; // BuildAnywhereHook: buildableTest 통과 강제
+        bool bHookCanCatchBoss      = false; // CanCatchBossHook: 보스 차단 플래그 0 강제
+        bool bHookPerfectPalStats   = false; // PalStatsCreationHook: 새 펄 IV 100 강제
+        bool bHookQuickResearch     = false; // ResearchIncreaseHook: 진행도 제곱 가속
+
         // ── 신규: 인벤토리 ──
         bool bForceItemStack       = false;
         int  SelectedContainerIdx  = 0;

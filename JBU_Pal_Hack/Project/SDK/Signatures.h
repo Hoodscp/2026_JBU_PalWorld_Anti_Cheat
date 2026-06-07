@@ -113,8 +113,53 @@ namespace SDK::Signatures
     inline constexpr const char* ExpPtrCapture =
         "CC 48 8B 81 38 03 00 00 C3";
 
+    // ── P2: 조건분기 강제 (MidHook bodyEnabled 로 분기 결과 변조) ──
+    // 함수 본체에서 cmp/test 결과를 사용자가 원하는 방향으로 강제.
+    // bodyDisabled = 원본 그대로, bodyEnabled = 분기 조작 + 원본 재실행.
+
+    // [P2] Can Build Anything — buildableTest 통과 강제.
+    // CT 원문 sig: `40 38 B1 E4 00 00 00` (cmp byte ptr [rcx+0xE4], sil, 7바이트).
+    // bodyEnabled: 같은 위치에 sil 자체를 미리 write 해 cmp 결과를 ZF=1 로 강제.
+    //   `40 88 B1 E4 00 00 00`   mov [rcx+0xE4], sil   (7바이트)
+    //   `40 38 B1 E4 00 00 00`   cmp [rcx+0xE4], sil   (7바이트, 원본 재실행)
+    // bodyDisabled: 원본 cmp 7바이트만.
+    inline constexpr const char* BuildableTest =
+        "40 38 B1 E4 00 00 00";
+
+    // [P2] Can Catch Boss Pal — `[rax+0x598]` 보스 차단 플래그를 0 강제 후 원본 cmp.
+    // CT 원문 sig: `48 8B 83 30 06 00 00 80 B8 98 05 00 00 00` (14바이트).
+    //   `48 8B 83 30 06 00 00`   mov rax, [rbx+0x630]              (7바이트)
+    //   `80 B8 98 05 00 00 00`   cmp byte ptr [rax+0x598], 0       (7바이트, imm8=0)
+    // bodyEnabled (mov rax 후 byte 강제 0 삽입 후 원본 cmp):
+    //   `48 8B 83 30 06 00 00`     mov rax, [rbx+0x630]            (원본)
+    //   `C6 80 98 05 00 00 00 00`  mov byte ptr [rax+0x598], 0     (8바이트, 강제)
+    //   `80 B8 98 05 00 00 00`     cmp byte ptr [rax+0x598], 0     (원본 재실행)
+    inline constexpr const char* CanCatchBossPal =
+        "48 8B 83 30 06 00 00 80 B8 98 05 00 00 00";
+
+    // ── P2: 레지스터 강제값 / 명령어 주입 ────────────────────────
+
+    // [P2] Perfect Pal Stats on Creation — `mov edi, 0x64` 사전 주입.
+    // CT 원문 sig: `41 BE 65 00 00 00 44 2B F7 45 85 F6 0F` (13바이트).
+    //   `41 BE 65 00 00 00`   mov r14d, 0x65   ← 패치 사이트 (6바이트)
+    //   `44 2B F7`            sub r14d, edi    (이후 sig 는 uniqueness 용)
+    // bodyEnabled: 원본 mov 직전에 `BF 64 00 00 00` (mov edi, 0x64) 삽입 →
+    //   sub r14d, edi 가 edi=0x64 로 평가 → 새 펄의 모든 IV(HP/근접/원거리/방어)
+    //   가 100 으로 부풀려짐.
+    inline constexpr const char* PalStatsCreation =
+        "41 BE 65 00 00 00 44 2B F7 45 85 F6 0F";
+
+    // [P2] Quick Research — `addss xmm6, [rdi+0x14]` 직후 `mulss xmm6, xmm6` 주입.
+    // CT 원문 sig: `F3 0F 58 77 14` (5바이트 — 정확히 1 명령어).
+    //   `F3 0F 58 77 14`   addss xmm6, [rdi+0x14]   ← 패치 사이트
+    // bodyEnabled: 원본 addss 후 `F3 0F 59 F6` (mulss xmm6, xmm6, 4바이트) 추가 →
+    //   매 tick 진행도가 제곱 누적되어 연구 완료까지 몇 호출이면 충분.
+    inline constexpr const char* ResearchIncrease =
+        "F3 0F 58 77 14";
+
     // TODO(Team C): 추가 분석 후 확장
     //   - mobsTakeDamgBossF (다중-비트 토글: GodMode+OHK+Immortal+AlmostKill)
-    //   - canCatchBossPal, buildableTest (조건 분기 강제)
-    //   - palStatsCreation, getCaptureStrength (레지스터 강제 값)
+    //   - getCaptureStrength, movCaptureChance (포획률/강도 부풀림)
+    //   - arenaRPGainMult (Arena RP 배율 증가)
+    //   - writeMachineHealth (One-Hit Machines)
 }
