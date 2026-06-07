@@ -183,15 +183,15 @@ cmake --build build --config Release
 | **InjectionScanner** | 비신뢰/미서명/신규 DLL, 수동 매핑(reflective) 영역 | DLL 인젝션·수동 매핑 |
 | **HookScanner** | 시스템 API 익스포트 인라인 후크 + 메인 모듈 IAT 후크 | MinHook/Detours 인라인·IAT 후크 |
 | **IntegrityScanner** | 라이브 `.text` vs 디스크 원본 PE 비교(ASLR 보정) | Track 2 NOP 패치·MidHook 트램펄린 |
+| **AntiDebug** | 대상 프로세스 디버거 탐지(PEB/NtQuery/하드웨어 BP/타이밍) | 디버거 부착·동적 분석 |
 
-네 모듈은 `ac_external_monitor` 실행파일로 **통합**되어 단일 스케줄러/큐로 동작합니다.
-자세한 내용은 [`Anticheat_client/External/README.md`](Anticheat_client/External/README.md) 참고.
+다섯 모듈은 `ac_external_monitor` 실행파일로 **통합**되어 단일 스케줄러/큐로 동작하며,
+결과를 **콘솔 로그**와 **웹 대시보드**(`http://127.0.0.1:8787`, 모듈별 탭) 양쪽으로
+출력합니다. 자세한 내용은
+[`Anticheat_client/External/README.md`](Anticheat_client/External/README.md) 참고.
 
-### 안티디버깅 모듈
-
-PID 대상 디버거 탐지(원격 디버거·디버그 포트/오브젝트·PEB 플래그·INT3/하드웨어
-브레이크포인트·시간 기반 정체 등). 자세한 내용은
-[`Anticheat_client/Module_Anti_Debugging/README.md`](Anticheat_client/Module_Anti_Debugging/README.md) 참고.
+> 안티디버깅은 기존 독립 실행형 모듈([`Module_Anti_Debugging`](Anticheat_client/Module_Anti_Debugging/README.md))도
+> 별도로 존재하며, 위 AntiDebug 는 이를 통합 러너/대시보드에 합류시킨 버전입니다.
 
 ---
 

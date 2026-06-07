@@ -6,19 +6,22 @@
 //   - InjectionScanner : 게임 프로세스 내 DLL 인젝션/수동 매핑 탐지            [기존]
 //   - HookScanner      : 시스템 API 익스포트 인라인 후크 + 메인 모듈 IAT 후크   [신규]
 //   - IntegrityScanner : 게임 .text(코드) vs 디스크 원본 무결성 비교            [신규]
+//   - AntiDebug        : 대상 프로세스 디버거 탐지(PEB/NtQuery/HWBP/타이밍)     [신규]
 //
-// 모든 모듈은 동일한 DetectionEventQueue 로 결과를 보내고, 소비 루프가 콘솔에
-// 출력한다(실 운영에선 서버 REST 송신 레이어로 교체).
+// 출력 경로(둘 다 동작):
+//   1) 콘솔 로그 — 기존 그대로 [SEVERITY] Module | Type | evidence
+//   2) 웹 대시보드 — http://127.0.0.1:8787 (모듈별 탭: 안티디버깅/인젝션/후킹/
+//      프로세스 감시/무결성). 같은 DetectionEvent 를 서버로도 Push.
 //
-// 설계 근거(IDetectionModule.h): 폴링 모듈은 스케줄러가 PollIntervalMs 주기로
-// Tick() 한다. 본 러너의 4개 모듈은 모두 Polling 종류다.
+// ⚠ DashboardServer.h 는 winsock2.h 를 먼저 포함해야 하므로 가장 위에 둔다.
+#include "DashboardServer.h"
+
 #include "IDetectionModule.h"
 #include "ProcessMonitorModule.h"
 #include "InjectionScannerModule.h"
 #include "HookScannerModule.h"
 #include "IntegrityScannerModule.h"
-
-#include <windows.h>
+#include "AntiDebugModule.h"
 
 #include <cstdio>
 #include <memory>
@@ -30,6 +33,8 @@ namespace {
 
 // 팰월드 UE5 Shipping 프로세스명(소문자). 환경에 맞게 변경 가능.
 const char* kPalworldImage = "palworld-win64-shipping.exe";
+// 대시보드 포트(루프백 전용).
+constexpr uint16_t kDashboardPort = 8787;
 
 volatile bool g_running = true;
 
@@ -55,8 +60,8 @@ const char* SevName(Severity s) {
 }  // namespace
 
 int main() {
-    SetConsoleOutputCP(CP_UTF8);
-    SetConsoleCtrlHandler(ConsoleHandler, TRUE);
+    ::SetConsoleOutputCP(CP_UTF8);
+    ::SetConsoleCtrlHandler(ConsoleHandler, TRUE);
 
     DetectionEventQueue queue;
 
@@ -86,19 +91,23 @@ int main() {
     hookMon->SetPollInterval(5000);
     hookMon->EnableExportHookScan(true);
     hookMon->EnableIatHookScan(true);
-    // 전체 익스포트 스캔은 비용↑/소음↑ — 기본 핫 워치리스트만 사용.
-    hookMon->EnableScanAllExports(false);
+    hookMon->EnableScanAllExports(false);  // 기본 핫 워치리스트만(비용↓)
 
     // ── 4) 무결성 검사 (신규) ────────────────────────────────────────────────
     auto integrityMon = std::make_unique<IntegrityScannerModule>();
     integrityMon->SetTargetImageName(kPalworldImage);
     integrityMon->SetPollInterval(8000);
     integrityMon->SetMaxRegionsPerModule(32);
-    // 게임 exe 외에 검증하고 싶은 모듈이 있으면 추가(예: 엔진 DLL).
-    // integrityMon->AddModule("someengine.dll");
+
+    // ── 5) 안티디버깅 (신규) ─────────────────────────────────────────────────
+    auto antiDbg = std::make_unique<AntiDebugModule>();
+    antiDbg->SetTargetImageName(kPalworldImage);
+    antiDbg->SetPollInterval(3000);
+    antiDbg->EnableHardwareBreakpointScan(true);
+    antiDbg->EnableTimingCheck(true);
 
     std::vector<IDetectionModule*> modules{
-        procMon.get(), injMon.get(), hookMon.get(), integrityMon.get(),
+        procMon.get(), injMon.get(), hookMon.get(), integrityMon.get(), antiDbg.get(),
     };
 
     for (auto* m : modules) {
@@ -108,9 +117,18 @@ int main() {
         }
     }
 
+    // 웹 대시보드 기동(실패해도 콘솔 로그는 정상 동작).
+    DashboardServer dash;
+    bool dashOk = dash.Start(kDashboardPort);
+
     std::printf("Anti-cheat External Suite running.\n");
     std::printf("  target : %s\n", kPalworldImage);
-    std::printf("  modules: ProcessMonitor / InjectionScanner / HookScanner / IntegrityScanner\n");
+    std::printf("  modules: ProcessMonitor / InjectionScanner / HookScanner / "
+                "IntegrityScanner / AntiDebug\n");
+    if (dashOk)
+        std::printf("  web UI : http://127.0.0.1:%u  (모듈별 탭)\n", kDashboardPort);
+    else
+        std::printf("  web UI : (start failed — 콘솔 로그만 동작)\n");
     std::printf("  (Ctrl+C to stop)\n\n");
 
     // 미니 스케줄러: 폴링 모듈별 다음 실행 시각 추적.
@@ -129,17 +147,19 @@ int main() {
             }
         }
 
-        // 큐 소비 — 실제로는 별도 스레드 / 서버 REST 송신 레이어로 분리.
+        // 큐 소비 — (1) 콘솔 로그(기존 유지) + (2) 웹 대시보드 push.
         DetectionEvent ev;
         while (queue.Pop(ev)) {
             std::printf("[%-8s] %-16s | %-26s | %s\n",
                         SevName(ev.severity), ev.moduleName.c_str(),
                         ev.detectionType.c_str(), ev.evidence.c_str());
+            if (dashOk) dash.Push(ev);
         }
 
         ::Sleep(100);  // 스케줄러 틱 해상도
     }
 
+    dash.Stop();
     for (auto* m : modules) m->Shutdown();
     std::printf("\nStopped.\n");
     return 0;
