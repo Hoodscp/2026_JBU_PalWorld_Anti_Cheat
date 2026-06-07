@@ -94,8 +94,14 @@ namespace SDK::Signatures
     // [P1] Inventory open 시 rcx 캡처 (인벤토리 객체 root).
     //   4A 20 83 B9 54 01 00 00 00   and [r11+0x015401B9], al   (9바이트, AOB 길이 그대로)
     //   ↑ patchLen 9, rcx 캡처
+    //
+    // ⚠ 2026-06-07 크래시 진단: 본 패턴이 명령어 경계가 아닌 곳(큰 함수 본체
+    //   안의 우연 일치)에 매칭되어, 9바이트 패치가 명령어를 중간에서 자름
+    //   → RIP+0x1F 지점에서 AV READ at 0xFFFFFFFFFFFFFFFF + RSP misalign 으로
+    //   게임 크래시 발생. 일단 빈 문자열로 비활성화 (SaveSpaceHook 가 skip 처리).
+    //   IDA 로 실제 함수 진입점 sig 재추출 후 다시 활성화 예정.
     inline constexpr const char* ItemSlotCapture =
-        "4A 20 83 B9 54 01 00 00 00";
+        "";  // DISABLED — 명령어 경계 불일치 의심, sig 재추출 필요
 
     // [P1] Technology cost subtract 시점에서 rdi 캡처 (= TechnologyData*).
     // saveSpace+0x150 / +0x154 가 TechnologyPoint / BossTechnologyPoint.
